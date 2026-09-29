@@ -17,18 +17,17 @@
 
 ## What is SoNotes?
 
-SoNotes is a **free, open-source note-taking app for Android built around your stylus and keyboard**. Write naturally in **Greek or English**, organize notes in unlimited folders, and keep everything **stored locally on your device**. No accounts, no cloud, no ads, no subscriptions.
+SoNotes is a free, open-source, privacy-first note-taking app for Android. Handwrite with a smart stylus that understands both **Greek and English**, style your text however you like, and organize everything in infinite folders and subfolders. Your notes are saved automatically and never leave your device.
 
----
-
-## Introduction
 <div align="center">
-SoNotes is a free, open-source, privacy-first note-taking app for Android. Handwrite with a smart stylus that understands both Greek and English, style your text however you like, and organize everything in infinite folders and subfolders. Your notes are saved automatically and never leave your device.
+  <img width="100" height="100" alt="app_logo" src="https://github.com/user-attachments/assets/7187b630-0473-444c-a78e-8fe259b33986" />
+  <br>
+  <em>"Your notes, however you like"</em>
 </div>
 
 ---
 
-## Features
+## Note Taking Features
 
 ### ✒️ Smart Stylus Support
 - Write with your stylus and let SoNotes understand your handwriting in **Greek** and **English**
