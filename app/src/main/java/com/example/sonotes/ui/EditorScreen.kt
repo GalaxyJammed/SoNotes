@@ -1,8 +1,14 @@
 package com.example.sonotes.ui
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,22 +34,36 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Create
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
-import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Title
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,23 +79,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.example.sonotes.data.AppDatabase
 import com.example.sonotes.data.Note
 import com.example.sonotes.data.normalizeForSearch
+import java.io.File
+import java.io.FileOutputStream
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -90,27 +122,247 @@ private val palette = listOf(
     Color(0xFF7B1FA2).toArgb()
 )
 
+data class ParsedTable(
+    val startIndex: Int,
+    val endIndex: Int,
+    val headers: List<String>,
+    val rows: List<List<String>>
+)
+
+sealed class DocBlock {
+    data class TextBlock(val text: String, val startIndex: Int, val endIndex: Int) : DocBlock()
+    data class TableBlock(val table: ParsedTable) : DocBlock()
+}
+
+fun parseDocBlocks(text: String): List<DocBlock> {
+    val tables = parseMarkdownTables(text)
+    if (tables.isEmpty()) {
+        return listOf(DocBlock.TextBlock(text, 0, text.length))
+    }
+
+    val blocks = mutableListOf<DocBlock>()
+    var currentIndex = 0
+
+    tables.forEach { table ->
+        if (table.startIndex > currentIndex) {
+            val segmentText = text.substring(currentIndex, table.startIndex)
+            blocks.add(DocBlock.TextBlock(segmentText, currentIndex, table.startIndex))
+        } else if (table.startIndex == 0 && currentIndex == 0) {
+            blocks.add(DocBlock.TextBlock("", 0, 0))
+        }
+        blocks.add(DocBlock.TableBlock(table))
+        currentIndex = table.endIndex
+    }
+
+    if (currentIndex < text.length) {
+        val segmentText = text.substring(currentIndex)
+        blocks.add(DocBlock.TextBlock(segmentText, currentIndex, text.length))
+    } else if (currentIndex == text.length) {
+        blocks.add(DocBlock.TextBlock("", text.length, text.length))
+    }
+
+    return blocks
+}
+
+fun parseMarkdownTables(text: String): List<ParsedTable> {
+    if (!text.contains("|")) return emptyList()
+    val lines = text.split("\n")
+    val result = mutableListOf<ParsedTable>()
+    var i = 0
+    var charOffset = 0
+
+    while (i < lines.size) {
+        val line = lines[i]
+        val trimmed = line.trim()
+        if (trimmed.startsWith("|") && trimmed.endsWith("|") && i + 1 < lines.size) {
+            val nextTrimmed = lines[i + 1].trim()
+            if (nextTrimmed.startsWith("|") && nextTrimmed.contains("---")) {
+                val tableStartOffset = charOffset
+
+                fun parseTableLine(l: String): List<String> {
+                    val parts = l.trim().split("|")
+                    val inner = if (parts.size >= 2 && parts.first().isBlank() && parts.last().isBlank()) {
+                        parts.subList(1, parts.size - 1)
+                    } else {
+                        parts
+                    }
+                    return inner.map { it.trim() }
+                }
+
+                val headers = parseTableLine(trimmed)
+                var j = i + 2
+                var currentOffset = charOffset + line.length + 1 + lines[i + 1].length + 1
+                val rows = mutableListOf<List<String>>()
+
+                while (j < lines.size) {
+                    val rLine = lines[j].trim()
+                    if (rLine.startsWith("|") && rLine.endsWith("|")) {
+                        val cells = parseTableLine(rLine)
+                        rows.add(cells)
+                        currentOffset += lines[j].length + 1
+                        j++
+                    } else {
+                        break
+                    }
+                }
+
+                result.add(
+                    ParsedTable(
+                        startIndex = tableStartOffset,
+                        endIndex = currentOffset.coerceIn(0, text.length),
+                        headers = headers,
+                        rows = rows
+                    )
+                )
+                i = j
+                charOffset = currentOffset
+                continue
+            }
+        }
+        charOffset += line.length + 1
+        i++
+    }
+    return result
+}
+
+fun generateMarkdownTableString(headers: List<String>, rows: List<List<String>>): String {
+    val colCount = maxOf(headers.size, rows.maxOfOrNull { it.size } ?: 0).coerceAtLeast(1)
+    val sb = StringBuilder()
+    
+    sb.append("|")
+    for (c in 0 until colCount) {
+        val h = headers.getOrElse(c) { "Header ${c + 1}" }
+        sb.append(" $h |")
+    }
+    sb.append("\n|")
+
+    for (c in 0 until colCount) {
+        sb.append(" --- |")
+    }
+    sb.append("\n")
+
+    rows.forEach { row ->
+        sb.append("|")
+        for (c in 0 until colCount) {
+            val cell = row.getOrElse(c) { "" }
+            sb.append(" $cell |")
+        }
+        sb.append("\n")
+    }
+
+    return sb.toString()
+}
+
+@Composable
+fun rememberImageBitmapFromFile(filePath: String): ImageBitmap? {
+    val context = LocalContext.current
+    return remember(filePath) {
+        try {
+            val cleanPath = filePath.removePrefix("file://")
+            val file = File(cleanPath)
+            if (file.exists()) {
+                BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+            } else if (cleanPath.startsWith("content://")) {
+                val uri = Uri.parse(cleanPath)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     val dao = remember { AppDatabase.get(context).noteDao() }
     val scope = rememberCoroutineScope()
     val saveLock = remember { Mutex() }
     var title by remember { mutableStateOf("") }
     var editor by remember { mutableStateOf(EditorState()) }
     var inkJson by remember { mutableStateOf("") }
+
+    var isEditMode by remember { mutableStateOf(noteId == -1L) }
     var isStylusMode by remember { mutableStateOf(false) }
     var stylusLanguage by remember { mutableStateOf(RecognitionLanguage.GREEK) }
+
     var loaded by remember { mutableStateOf(noteId == -1L) }
     var currentId by remember { mutableLongStateOf(noteId) }
     var lastSaved by remember { mutableStateOf("") }
+    
+    var attachmentMenu by remember { mutableStateOf(false) }
     var colorMenu by remember { mutableStateOf(false) }
+    var headerMenu by remember { mutableStateOf(false) }
+
     val undoStack = remember { ArrayList<EditorState>() }
     val redoStack = remember { ArrayList<EditorState>() }
     val lastChange = remember { longArrayOf(0L) }
 
+    var tempCameraUri by remember { mutableStateOf<Uri?>(null) }
 
+    fun commit(new: EditorState, structural: Boolean) {
+        val old = editor
+        if (new.content != old.content) {
+            val now = System.currentTimeMillis()
+            if (structural || now - lastChange[0] > 1000 || undoStack.isEmpty()) {
+                undoStack.add(old)
+                if (undoStack.size > 200) undoStack.removeAt(0)
+            }
+            lastChange[0] = now
+            redoStack.clear()
+        }
+        editor = new
+    }
+
+    fun exitEditMode() {
+        isEditMode = false
+        isStylusMode = false
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        editor = editor.copy(typing = CharStyle())
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && tempCameraUri != null) {
+            commit(editor.insertImage(tempCameraUri.toString(), "Photo"), true)
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { sourceUri ->
+            try {
+                val destFile = File(context.filesDir, "attachments/img_${System.currentTimeMillis()}.jpg")
+                destFile.parentFile?.mkdirs()
+                context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                commit(editor.insertImage(destFile.absolutePath, "Photo"), true)
+            } catch (_: Exception) {
+                commit(editor.insertImage(sourceUri.toString(), "Photo"), true)
+            }
+        }
+    }
+
+    LaunchedEffect(isStylusMode) {
+        if (isStylusMode) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+        }
+    }
 
     LaunchedEffect(noteId) {
         if (noteId != -1L) {
@@ -173,20 +425,14 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
 
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { saveNow() }
 
-    BackHandler { saveAndExit() }
-
-    fun commit(new: EditorState, structural: Boolean) {
-        val old = editor
-        if (new.content != old.content) {
-            val now = System.currentTimeMillis()
-            if (structural || now - lastChange[0] > 1000 || undoStack.isEmpty()) {
-                undoStack.add(old)
-                if (undoStack.size > 200) undoStack.removeAt(0)
-            }
-            lastChange[0] = now
-            redoStack.clear()
+    BackHandler {
+        if (isStylusMode) {
+            isStylusMode = false
+        } else if (isEditMode) {
+            exitEditMode()
+        } else {
+            saveAndExit()
         }
-        editor = new
     }
 
     fun undo() {
@@ -203,13 +449,6 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
         lastChange[0] = 0L
     }
 
-    val content = editor.content
-    val transformation = remember(content) {
-        object : VisualTransformation {
-            override fun filter(text: AnnotatedString) =
-                TransformedText(content.toAnnotated(), OffsetMapping.Identity)
-        }
-    }
     val shownColor = if (loaded) editor.shownColor() else 0
     val listKind = editor.currentList()
 
@@ -218,7 +457,10 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (currentId == -1L) "New note" else "Edit note")
+                        Text(
+                            text = if (title.isNotBlank()) title else if (isEditMode) "New note" else "Note View",
+                            maxLines = 1
+                        )
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             onClick = {
@@ -238,23 +480,58 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { saveAndExit() }) {
+                    IconButton(
+                        onClick = {
+                            if (isStylusMode) {
+                                isStylusMode = false
+                            } else if (isEditMode) {
+                                exitEditMode()
+                            } else {
+                                saveAndExit()
+                            }
+                        }
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    // Top-right Undo and Redo buttons
-                    IconButton(onClick = { undo() }, enabled = undoStack.isNotEmpty()) {
-                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
+                    if (isEditMode) {
+                        IconButton(onClick = { undo() }, enabled = undoStack.isNotEmpty()) {
+                            Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
+                        }
+                        IconButton(onClick = { redo() }, enabled = redoStack.isNotEmpty()) {
+                            Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
+                        }
+
+                        IconButton(
+                            onClick = {
+                                isStylusMode = !isStylusMode
+                                if (isStylusMode) {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isStylusMode) Icons.Default.Keyboard else Icons.Default.Create,
+                                contentDescription = if (isStylusMode) "Switch to Text Editor" else "Switch to Stylus Canvas"
+                            )
+                        }
                     }
-                    IconButton(onClick = { redo() }, enabled = redoStack.isNotEmpty()) {
-                        Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
-                    }
-                    // Mode toggle: Text vs Stylus Canvas
-                    IconButton(onClick = { isStylusMode = !isStylusMode }) {
+
+                    IconButton(
+                        onClick = {
+                            if (isEditMode) {
+                                exitEditMode()
+                            } else {
+                                isEditMode = true
+                            }
+                        }
+                    ) {
                         Icon(
-                            if (isStylusMode) Icons.Default.Edit else Icons.Default.Create,
-                            contentDescription = if (isStylusMode) "Switch to Text Editor" else "Switch to Stylus Canvas"
+                            imageVector = if (isEditMode) Icons.Default.Visibility else Icons.Default.DriveFileRenameOutline,
+                            contentDescription = if (isEditMode) "Switch to Viewing Mode" else "Switch to Edit Mode",
+                            tint = if (isEditMode) MaterialTheme.colorScheme.primary else LocalContentColor.current
                         )
                     }
                 }
@@ -268,7 +545,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .imePadding()
         ) {
-            if (!isStylusMode) {
+            if (isEditMode && !isStylusMode) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -284,7 +561,6 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                // Rich Text Note Editor Layer (Always visible underneath)
                 BoxWithConstraints(
                     Modifier
                         .fillMaxSize()
@@ -296,48 +572,358 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                     ) {
-                        BasicTextField(
-                            value = editor.value,
-                            onValueChange = { nv ->
-                                val old = editor
-                                val next = old.edit(nv)
-                                val big = abs(next.content.text.length - old.content.text.length) > 1
-                                commit(next, big)
-                            },
-                            textStyle = TextStyle(
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 16.sp,
-                                lineHeight = 24.sp
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            visualTransformation = transformation,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = minHeight)
-                                .padding(12.dp),
-                            decorationBox = { inner ->
-                                Box {
-                                    if (editor.value.text.isEmpty()) {
-                                        Text(
-                                            "Start writing or switch to Stylus overlay mode…",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            val docBlocks = remember(editor.content.text) { parseDocBlocks(editor.content.text) }
+
+                            docBlocks.forEach { block ->
+                                when (block) {
+                                    is DocBlock.TextBlock -> {
+                                        val segmentText = block.text
+                                        val segStyles = remember(editor.content.styles, block.startIndex, block.endIndex) {
+                                            val safeStyles = if (editor.content.styles.size == editor.content.text.length) {
+                                                editor.content.styles
+                                            } else {
+                                                List(editor.content.text.length) { CharStyle() }
+                                            }
+                                            val s = block.startIndex.coerceIn(0, safeStyles.size)
+                                            val e = block.endIndex.coerceIn(s, safeStyles.size)
+                                            safeStyles.subList(s, e)
+                                        }
+                                        val segContent = remember(segmentText, segStyles) {
+                                            RichContent(segmentText, segStyles)
+                                        }
+
+                                        if (isEditMode) {
+                                            val fullSel = editor.value.selection
+                                            val segSelStart = (fullSel.start - block.startIndex).coerceIn(0, segmentText.length)
+                                            val segSelEnd = (fullSel.end - block.startIndex).coerceIn(0, segmentText.length)
+                                            val segFieldValue = TextFieldValue(segmentText, TextRange(segSelStart, segSelEnd))
+
+                                            BasicTextField(
+                                                value = segFieldValue,
+                                                onValueChange = { newSegValue ->
+                                                    val fullPrefix = editor.content.text.substring(0, block.startIndex)
+                                                    val fullSuffix = editor.content.text.substring(block.endIndex.coerceAtMost(editor.content.text.length))
+                                                    val newFullText = fullPrefix + newSegValue.text + fullSuffix
+                                                    val newSelStart = (block.startIndex + newSegValue.selection.start).coerceIn(0, newFullText.length)
+                                                    val newSelEnd = (block.startIndex + newSegValue.selection.end).coerceIn(0, newFullText.length)
+                                                    val newFieldValue = TextFieldValue(newFullText, TextRange(newSelStart, newSelEnd))
+
+                                                    val next = editor.edit(newFieldValue)
+                                                    val big = abs(newSegValue.text.length - segmentText.length) > 1
+
+                                                    if (!big && newSegValue.selection == segFieldValue.selection && newSegValue.selection.collapsed) {
+                                                        val posInFull = block.startIndex + newSegValue.selection.min
+                                                        val toggled = editor.toggleCheckAtPosition(posInFull)
+                                                        if (toggled != editor) {
+                                                            commit(toggled, true)
+                                                            return@BasicTextField
+                                                        }
+                                                    }
+                                                    commit(next, big)
+                                                },
+                                                textStyle = TextStyle(
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 16.sp,
+                                                    lineHeight = 24.sp
+                                                ),
+                                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                                visualTransformation = { TransformedText(segContent.toAnnotated(), OffsetMapping.Identity) },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = if (docBlocks.size == 1) minHeight else 32.dp)
+                                                    .padding(12.dp),
+                                                decorationBox = { inner ->
+                                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                                        if (editor.value.text.isEmpty()) {
+                                                            Text(
+                                                                "Start writing or switch to Stylus overlay mode…",
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                        inner()
+                                                    }
+                                                }
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = if (docBlocks.size == 1) minHeight else 0.dp)
+                                                    .padding(12.dp)
+                                            ) {
+                                                if (editor.content.text.isBlank()) {
+                                                    Text(
+                                                        "Empty note. Tap the Edit button top right to start writing.",
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                } else if (segmentText.isNotEmpty()) {
+                                                    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+                                                    val cleanAnnotated = remember(segContent, block.startIndex) {
+                                                        segContent.toCleanAnnotated(block.startIndex)
+                                                    }
+
+                                                    Text(
+                                                        text = cleanAnnotated,
+                                                        style = TextStyle(
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                            fontSize = 16.sp,
+                                                            lineHeight = 24.sp
+                                                        ),
+                                                        onTextLayout = { layoutResult = it },
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .pointerInput(cleanAnnotated) {
+                                                                detectTapGestures { tapOffset ->
+                                                                    layoutResult?.let { textLayoutResult ->
+                                                                        val pos = textLayoutResult.getOffsetForPosition(tapOffset)
+                                                                        cleanAnnotated
+                                                                            .getStringAnnotations(tag = "TODO_TOGGLE", start = pos, end = pos)
+                                                                            .firstOrNull()?.let { annotation ->
+                                                                                val origPos = annotation.item.toIntOrNull()
+                                                                                if (origPos != null) {
+                                                                                    val toggled = editor.toggleCheckAtPosition(origPos)
+                                                                                    commit(toggled, true)
+                                                                                }
+                                                                            }
+                                                                    }
+                                                                }
+                                                            }
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
-                                    inner()
+                                    is DocBlock.TableBlock -> {
+                                        val parsedTable = block.table
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(8.dp)
+                                        ) {
+                                            Column(Modifier.padding(8.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "📊 Table Window (${parsedTable.rows.size + 1}x${parsedTable.headers.size})",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    if (isEditMode) {
+                                                        IconButton(
+                                                            onClick = {
+                                                                val updatedText = editor.content.text.removeRange(parsedTable.startIndex, parsedTable.endIndex)
+                                                                commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(Icons.Default.Delete, contentDescription = "Remove Table", tint = MaterialTheme.colorScheme.error)
+                                                        }
+                                                    }
+                                                }
+
+                                                Spacer(Modifier.height(4.dp))
+
+                                                Row(
+                                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                            parsedTable.headers.forEachIndexed { colIdx, headerText ->
+                                                                OutlinedTextField(
+                                                                    value = headerText,
+                                                                    onValueChange = { newText ->
+                                                                        if (isEditMode) {
+                                                                            val newHeaders = parsedTable.headers.toMutableList().apply { set(colIdx, newText) }
+                                                                            val newTableStr = generateMarkdownTableString(newHeaders, parsedTable.rows)
+                                                                            val updatedText = editor.content.text.substring(0, parsedTable.startIndex) + newTableStr + editor.content.text.substring(parsedTable.endIndex)
+                                                                            commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), false)
+                                                                        }
+                                                                    },
+                                                                    readOnly = !isEditMode,
+                                                                    modifier = Modifier.width(100.dp),
+                                                                    textStyle = TextStyle(
+                                                                        fontSize = 13.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = MaterialTheme.colorScheme.onSurface
+                                                                    ),
+                                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                                                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                                                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                                                    ),
+                                                                    singleLine = true
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Spacer(Modifier.height(4.dp))
+
+                                                        parsedTable.rows.forEachIndexed { rowIdx, rowCells ->
+                                                            Row(
+                                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                                modifier = Modifier.padding(top = 4.dp)
+                                                            ) {
+                                                                parsedTable.headers.indices.forEach { colIdx ->
+                                                                    val cellValue = rowCells.getOrElse(colIdx) { "" }
+                                                                    OutlinedTextField(
+                                                                        value = cellValue,
+                                                                        onValueChange = { newText ->
+                                                                            if (isEditMode) {
+                                                                                val newRows = parsedTable.rows.map { it.toMutableList() }
+                                                                                while (newRows[rowIdx].size <= colIdx) newRows[rowIdx].add("")
+                                                                                newRows[rowIdx][colIdx] = newText
+                                                                                val newTableStr = generateMarkdownTableString(parsedTable.headers, newRows)
+                                                                                val updatedText = editor.content.text.substring(0, parsedTable.startIndex) + newTableStr + editor.content.text.substring(parsedTable.endIndex)
+                                                                                commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), false)
+                                                                            }
+                                                                        },
+                                                                        readOnly = !isEditMode,
+                                                                        modifier = Modifier.width(100.dp),
+                                                                        textStyle = TextStyle(
+                                                                            fontSize = 13.sp,
+                                                                            color = MaterialTheme.colorScheme.onSurface
+                                                                        ),
+                                                                        colors = OutlinedTextFieldDefaults.colors(
+                                                                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                                                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                                                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                                                                        ),
+                                                                        singleLine = true
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+
+                                                        if (isEditMode) {
+                                                            IconButton(
+                                                                onClick = {
+                                                                    val newRows = parsedTable.rows + listOf(List(parsedTable.headers.size) { "" })
+                                                                    val newTableStr = generateMarkdownTableString(parsedTable.headers, newRows)
+                                                                    val updatedText = editor.content.text.substring(0, parsedTable.startIndex) + newTableStr + editor.content.text.substring(parsedTable.endIndex)
+                                                                    commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
+                                                                },
+                                                                modifier = Modifier
+                                                                    .padding(top = 4.dp)
+                                                                    .size(28.dp)
+                                                                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                                                            ) {
+                                                                Icon(Icons.Default.Add, contentDescription = "Add Row (+)", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (isEditMode) {
+                                                        Spacer(Modifier.width(6.dp))
+
+                                                        IconButton(
+                                                            onClick = {
+                                                                val newHeaders = parsedTable.headers + "Header ${parsedTable.headers.size + 1}"
+                                                                val newRows = parsedTable.rows.map { it + "" }
+                                                                val newTableStr = generateMarkdownTableString(newHeaders, newRows)
+                                                                val updatedText = editor.content.text.substring(0, parsedTable.startIndex) + newTableStr + editor.content.text.substring(parsedTable.endIndex)
+                                                                commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
+                                                            },
+                                                            modifier = Modifier
+                                                                .size(28.dp)
+                                                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                                                        ) {
+                                                            Icon(Icons.Default.Add, contentDescription = "Add Column (+)", tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        )
+
+                            val imageMatches = remember(editor.content.text) {
+                                Regex("!\\[(.*?)\\]\\((.*?)\\)").findAll(editor.content.text).toList()
+                            }
+
+                            if (imageMatches.isNotEmpty()) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    if (isEditMode) {
+                                        Text(
+                                            text = "📎 Attached Photos (${imageMatches.size})",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.padding(bottom = 4.dp)
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        imageMatches.forEach { match ->
+                                            val filePath = match.groupValues[2]
+                                            val imgBitmap = rememberImageBitmapFromFile(filePath)
+                                            Card(
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                                modifier = Modifier.size(120.dp, 100.dp)
+                                            ) {
+                                                Box(Modifier.fillMaxSize()) {
+                                                    if (imgBitmap != null) {
+                                                        Image(
+                                                            bitmap = imgBitmap,
+                                                            contentDescription = "Attachment",
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .background(Color.LightGray),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text("📷 Image", fontSize = 12.sp)
+                                                        }
+                                                    }
+                                                    if (isEditMode) {
+                                                        IconButton(
+                                                            onClick = {
+                                                                val newText = editor.content.text.removeRange(match.range)
+                                                                commit(EditorState(TextFieldValue(newText), richContentFromBody(newText)), true)
+                                                            },
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .size(24.dp)
+                                                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                                        ) {
+                                                            Icon(Icons.Default.Close, contentDescription = "Delete Photo", tint = Color.White, modifier = Modifier.size(16.dp))
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // Transparent Stylus Handwriting Overlay (Renders on top when isStylusMode is true)
-                if (isStylusMode) {
+                if (isStylusMode && isEditMode) {
                     val textBeforeCursor = remember(editor.content.text, editor.value.selection) {
                         val selMin = editor.value.selection.min.coerceIn(0, editor.content.text.length)
                         editor.content.text.substring(0, selMin)
                     }
                     StylusCanvas(
                         selectedLanguage = stylusLanguage,
+                        isNewNote = (noteId == -1L),
                         preContext = textBeforeCursor,
                         onTextRecognized = { recognizedText ->
                             val currentText = editor.content.text
@@ -365,8 +951,11 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                     )
                 }
             }
-            Surface(
-                    tonalElevation = 3.dp,
+
+            if (isEditMode && !isStylusMode) {
+                Surface(
+                    tonalElevation = 4.dp,
+                    shadowElevation = 2.dp,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -375,29 +964,157 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                     Row(
                         modifier = Modifier
                             .horizontalScroll(rememberScrollState())
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        FilledTonalIconToggleButton(
-                            checked = editor.allSelected { it.bold },
-                            onCheckedChange = { on ->
+                        Box {
+                            IconButton(onClick = { attachmentMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Add Attachment",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = attachmentMenu,
+                                onDismissRequest = { attachmentMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Take a Picture")
+                                        }
+                                    },
+                                    onClick = {
+                                        attachmentMenu = false
+                                        try {
+                                            val file = File(context.filesDir, "attachments/img_${System.currentTimeMillis()}.jpg")
+                                            file.parentFile?.mkdirs()
+                                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                            tempCameraUri = uri
+                                            cameraLauncher.launch(uri)
+                                        } catch (_: Exception) {}
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Choose from Gallery")
+                                        }
+                                    },
+                                    onClick = {
+                                        attachmentMenu = false
+                                        galleryLauncher.launch("image/*")
+                                    }
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val on = !editor.allSelected { it.bold }
                                 commit(editor.applyStyle { it.copy(bold = on) }, true)
                             }
-                        ) { Icon(Icons.Default.FormatBold, contentDescription = "Bold") }
-                        FilledTonalIconToggleButton(
-                            checked = editor.allSelected { it.italic },
-                            onCheckedChange = { on ->
+                        ) {
+                            Icon(
+                                Icons.Default.FormatBold,
+                                contentDescription = "Bold",
+                                tint = if (editor.allSelected { it.bold }) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val on = !editor.allSelected { it.italic }
                                 commit(editor.applyStyle { it.copy(italic = on) }, true)
                             }
-                        ) { Icon(Icons.Default.FormatItalic, contentDescription = "Italic") }
-                        FilledTonalIconToggleButton(
-                            checked = listKind == 1,
-                            onCheckedChange = { commit(editor.toggleList(false), true) }
-                        ) { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "Bullet list") }
-                        FilledTonalIconToggleButton(
-                            checked = listKind == 2,
-                            onCheckedChange = { commit(editor.toggleList(true), true) }
-                        ) { Icon(Icons.Default.FormatListNumbered, contentDescription = "Numbered list") }
+                        ) {
+                            Icon(
+                                Icons.Default.FormatItalic,
+                                contentDescription = "Italic",
+                                tint = if (editor.allSelected { it.italic }) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val on = !editor.allSelected { it.strikethrough }
+                                commit(editor.applyStyle { it.copy(strikethrough = on) }, true)
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.FormatStrikethrough,
+                                contentDescription = "Strikethrough",
+                                tint = if (editor.allSelected { it.strikethrough }) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+
+                        Box {
+                            IconButton(onClick = { headerMenu = true }) {
+                                Icon(Icons.Default.Title, contentDescription = "Headers")
+                            }
+                            DropdownMenu(expanded = headerMenu, onDismissRequest = { headerMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("H1 Big Header", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+                                    onClick = {
+                                        commit(editor.toggleHeader(1), true)
+                                        headerMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("H2 Medium Header", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+                                    onClick = {
+                                        commit(editor.toggleHeader(2), true)
+                                        headerMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("H3 Small Header", fontWeight = FontWeight.Bold, fontSize = 14.sp) },
+                                    onClick = {
+                                        commit(editor.toggleHeader(3), true)
+                                        headerMenu = false
+                                    }
+                                )
+                            }
+                        }
+
+                        IconButton(onClick = { commit(editor.toggleList(false), true) }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.FormatListBulleted,
+                                contentDescription = "Bullet list",
+                                tint = if (listKind == 1) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+
+                        IconButton(onClick = { commit(editor.toggleList(true), true) }) {
+                            Icon(
+                                Icons.Default.FormatListNumbered,
+                                contentDescription = "Numbered list",
+                                tint = if (listKind == 2) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+
+                        IconButton(onClick = { commit(editor.toggleTodo(), true) }) {
+                            Icon(
+                                Icons.Default.CheckBox,
+                                contentDescription = "Todo list",
+                                tint = if (listKind == 3) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
+
+                        IconButton(onClick = { commit(editor.toggleCodeBlock(), true) }) {
+                            Icon(Icons.Default.Code, contentDescription = "Code block")
+                        }
+
+                        IconButton(onClick = { commit(editor.insertTable(2, 2), true) }) {
+                            Icon(Icons.Default.GridOn, contentDescription = "Insert 2x2 Table Window")
+                        }
+
                         Box {
                             IconButton(onClick = { colorMenu = true }) {
                                 Icon(
@@ -429,3 +1146,4 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
             }
         }
     }
+}

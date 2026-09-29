@@ -24,8 +24,6 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -90,7 +88,6 @@ enum class RecognitionLanguage(val code: String, val displayName: String, val fl
     MATH("zxx-X-math", "Math", "🧮")
 }
 
-// Basic Math Classifier Heuristic for +, -, *, /, =, x, ÷
 fun classifyBasicMathStroke(strokes: List<StylusStroke>): List<RecognitionCandidate> {
     val nonEraser = strokes.filter { !it.isEraser && it.points.size > 1 }
     if (nonEraser.isEmpty()) return emptyList()
@@ -151,6 +148,7 @@ fun classifyBasicMathStroke(strokes: List<StylusStroke>): List<RecognitionCandid
 @Composable
 fun StylusCanvas(
     selectedLanguage: RecognitionLanguage = RecognitionLanguage.GREEK,
+    isNewNote: Boolean = false,
     preContext: String = "",
     onTextRecognized: (String) -> Unit,
     onSubstituteCandidate: ((oldInsertedText: String, newCandidateText: String) -> Unit)? = null,
@@ -161,38 +159,31 @@ fun StylusCanvas(
 
     val strokes = remember { mutableStateOf(listOf<StylusStroke>()) }
     var currentPoints by remember { mutableStateOf(listOf<StylusPoint>()) }
-    var isEraserActive by remember { mutableStateOf(false) }
 
-    // Math mode & Dyslexia assist state toggles
     var isMathMode by remember { mutableStateOf(false) }
     var isDyslexiaMode by remember { mutableStateOf(AppSettings.isDyslexiaModeEnabled(context)) }
 
-    // Auto-fading hint text state (disappears after 2.5s or on touch)
     var showHintText by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
         delay(2500)
         showHintText = false
     }
 
-    // Track last inserted text for real-time candidate substitution
     var lastInsertedText by remember { mutableStateOf("") }
 
     var isModelDownloaded by remember { mutableStateOf(false) }
     var isDownloadingModel by remember { mutableStateOf(false) }
     var modelDownloadError by remember { mutableStateOf<String?>(null) }
 
-    // Recognition state
     var isRecognizing by remember { mutableStateOf(false) }
     var recognizedText by remember { mutableStateOf("") }
     var candidates by remember { mutableStateOf<List<RecognitionCandidate>>(emptyList()) }
     var autoRecognizeJob by remember { mutableStateOf<Job?>(null) }
 
-    // Active DigitalInkRecognizer instance
     var currentRecognizer by remember { mutableStateOf<DigitalInkRecognizer?>(null) }
 
     val activeLangCode = if (isMathMode) RecognitionLanguage.MATH.code else selectedLanguage.code
 
-    // Helper to resolve ML Kit Digital Ink Model Identifier
     fun getModelIdentifier(languageTag: String): DigitalInkRecognitionModelIdentifier? {
         return try {
             DigitalInkRecognitionModelIdentifier.fromLanguageTag(languageTag)
@@ -204,7 +195,6 @@ fun StylusCanvas(
         }
     }
 
-    // Function to check and load/download ML Kit model
     fun checkAndPrepareModel(langCode: String) {
         val identifier = getModelIdentifier(langCode)
         if (identifier == null) {
@@ -267,7 +257,6 @@ fun StylusCanvas(
         }
     }
 
-    // Core ML Kit Digital Ink Recognition routine
     fun performRecognition(autoInsert: Boolean = false) {
         val nonEraserStrokes = strokes.value.filter { !it.isEraser && it.points.isNotEmpty() }
         if (nonEraserStrokes.isEmpty()) {
@@ -358,7 +347,6 @@ fun StylusCanvas(
             }
     }
 
-    // Schedule debounced auto-recognition when stylus stroke finishes (2.5 seconds pause)
     fun scheduleAutoRecognition() {
         autoRecognizeJob?.cancel()
         autoRecognizeJob = scope.launch {
@@ -368,19 +356,16 @@ fun StylusCanvas(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Overlay Canvas Area (Transparent overlay so note content underneath is visible)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0x05000000))
                 .pointerInteropFilter { event ->
                     val action = event.actionMasked
-                    val toolType = event.getToolType(0)
-                    val eraser = toolType == MotionEvent.TOOL_TYPE_ERASER || isEraserActive
 
                     when (action) {
                         MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
-                            showHintText = false // Instantly hide hint text on touch
+                            showHintText = false
                             val pts = mutableListOf<StylusPoint>().apply { addAll(currentPoints) }
                             val historySize = event.historySize
                             for (i in 0 until historySize) {
@@ -407,11 +392,12 @@ fun StylusCanvas(
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                             if (currentPoints.isNotEmpty()) {
                                 val userColor = AppSettings.getStylusColor(context)
+                                val userWidth = AppSettings.getStylusWidth(context)
                                 val newStroke = StylusStroke(
                                     points = currentPoints,
-                                    isEraser = eraser,
-                                    color = if (eraser) android.graphics.Color.TRANSPARENT else userColor,
-                                    strokeWidth = if (eraser) 32f else 5f
+                                    isEraser = false,
+                                    color = userColor,
+                                    strokeWidth = 5f * userWidth
                                 )
                                 strokes.value = strokes.value + newStroke
                                 currentPoints = emptyList()
@@ -448,7 +434,7 @@ fun StylusCanvas(
                         }
                         drawPath(
                             path = path,
-                            color = if (stroke.isEraser) Color(0x00000000) else Color(stroke.color),
+                            color = Color(stroke.color),
                             style = Stroke(
                                 width = stroke.strokeWidth * (stroke.points.firstOrNull()?.pressure ?: 1f),
                                 cap = StrokeCap.Round,
@@ -467,11 +453,12 @@ fun StylusCanvas(
                             quadraticTo(prev.x, prev.y, (prev.x + curr.x) / 2, (prev.y + curr.y) / 2)
                         }
                     }
+                    val userWidth = AppSettings.getStylusWidth(context)
                     drawPath(
                         path = activePath,
-                        color = if (isEraserActive) Color.Gray else Color(AppSettings.getStylusColor(context)),
+                        color = Color(AppSettings.getStylusColor(context)),
                         style = Stroke(
-                            width = (if (isEraserActive) 32f else 5f) * (currentPoints.firstOrNull()?.pressure ?: 1f),
+                            width = 5f * userWidth * (currentPoints.firstOrNull()?.pressure ?: 1f),
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )
@@ -479,8 +466,7 @@ fun StylusCanvas(
                 }
             }
 
-            // Auto-fading helper hint (disappears after 2.5s or on touch)
-            if (showHintText && strokes.value.isEmpty() && currentPoints.isEmpty() && recognizedText.isBlank() && lastInsertedText.isBlank()) {
+            if (isNewNote && showHintText && strokes.value.isEmpty() && currentPoints.isEmpty() && recognizedText.isBlank() && lastInsertedText.isBlank()) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                     shape = RoundedCornerShape(20.dp),
@@ -496,7 +482,6 @@ fun StylusCanvas(
             }
         }
 
-        // Status Indicator Header (if model loading or download error)
         if (isDownloadingModel || modelDownloadError != null || onCloseOverlay != null) {
             Row(
                 modifier = Modifier
@@ -562,18 +547,17 @@ fun StylusCanvas(
             }
         }
 
-        // Floating Bottom Toolbar & Alternatives Bar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(bottom = 8.dp)
                 .align(Alignment.BottomCenter)
         ) {
-            // Live Recognition & Alternatives Card at Bottom
             if (recognizedText.isNotBlank() || isRecognizing || candidates.isNotEmpty()) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f))
                 ) {
                     Column(modifier = Modifier.padding(8.dp)) {
@@ -607,7 +591,6 @@ fun StylusCanvas(
                             }
                         }
 
-                        // Alternatives chips for real-time word/symbol substitution
                         if (candidates.size > 1) {
                             Row(
                                 modifier = Modifier
@@ -650,13 +633,14 @@ fun StylusCanvas(
                 }
             }
 
-            // Single Row Floating Action Toolbar: [Eraser] [Clear] [Math Σ] [Dyslexia ♿] ... [Recognize] [Insert]
             Surface(
                 tonalElevation = 6.dp,
                 shadowElevation = 4.dp,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-                modifier = Modifier.fillMaxWidth()
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -665,22 +649,6 @@ fun StylusCanvas(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Eraser Toggle Icon
-                    IconButton(
-                        onClick = { isEraserActive = !isEraserActive },
-                        modifier = Modifier.background(
-                            if (isEraserActive) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                            shape = CircleShape
-                        )
-                    ) {
-                        Icon(
-                            if (isEraserActive) Icons.Default.Edit else Icons.Default.Gesture,
-                            contentDescription = "Toggle Eraser",
-                            tint = if (isEraserActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    // Clear (Trash) Icon
                     IconButton(
                         onClick = {
                             strokes.value = emptyList()
@@ -697,7 +665,6 @@ fun StylusCanvas(
                         )
                     }
 
-                    // Math Symbols Mode Button
                     IconButton(
                         onClick = {
                             isMathMode = !isMathMode
@@ -720,7 +687,6 @@ fun StylusCanvas(
 
                     Spacer(Modifier.weight(1f))
 
-                    // Manual Recognize Icon Button
                     IconButton(
                         onClick = { performRecognition(autoInsert = false) },
                         enabled = strokes.value.isNotEmpty() && !isRecognizing
@@ -732,7 +698,6 @@ fun StylusCanvas(
                         )
                     }
 
-                    // Insert Text Checkmark Icon Button
                     IconButton(
                         onClick = {
                             applyInsertText(recognizedText)

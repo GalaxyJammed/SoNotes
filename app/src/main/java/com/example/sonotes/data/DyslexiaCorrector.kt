@@ -88,14 +88,12 @@ object DyslexiaCorrector {
         val strippedInput = stripAccents(trimmed)
         val isGreek = languageCode.startsWith("el")
 
-        // 1. Check if exact input exists in dictionary
         val exactMatch = dictionary.firstOrNull { stripAccents(it) == strippedInput }
         if (exactMatch != null) {
             val preservedCase = preserveCase(trimmed, exactMatch)
             return DyslexiaCorrectionResult(trimmed, preservedCase, false, listOf(preservedCase))
         }
 
-        // 2. Perform phonetic & Levenshtein edit distance lookup
         var bestCandidate: String? = null
         var minScore = Int.MAX_VALUE
 
@@ -105,7 +103,6 @@ object DyslexiaCorrector {
             val dictStripped = stripAccents(dictWord)
             val dictPhonetic = if (isGreek) phoneticGreek(dictWord) else dictStripped
 
-            // Phonetic distance
             val distance = levenshteinDistance(inputPhonetic, dictPhonetic)
 
             if (distance < minScore) {
@@ -114,14 +111,13 @@ object DyslexiaCorrector {
             }
         }
 
-        // Allow correction if edit distance is small (<= 2 edits)
         val isCorrectionFound = bestCandidate != null && minScore <= 2
         val corrected = if (bestCandidate != null && minScore <= 2) preserveCase(trimmed, bestCandidate) else trimmed
 
         val altList = mutableListOf<String>()
         if (isCorrectionFound) {
             altList.add(corrected)
-            altList.add(trimmed) // User's original spelling
+            altList.add(trimmed)
         } else {
             altList.add(trimmed)
         }

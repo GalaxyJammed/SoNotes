@@ -1,5 +1,6 @@
 package com.example.sonotes.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,13 +34,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.sonotes.data.AppSettings
+import java.util.Locale
 
 @Composable
 fun SettingsDialog(
@@ -47,6 +52,7 @@ fun SettingsDialog(
     val context = LocalContext.current
     var isDyslexiaEnabled by remember { mutableStateOf(AppSettings.isDyslexiaModeEnabled(context)) }
     var selectedInkColorArgb by remember { mutableIntStateOf(AppSettings.getStylusColor(context)) }
+    var selectedStylusWidth by remember { mutableStateOf(AppSettings.getStylusWidth(context)) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -67,7 +73,6 @@ fun SettingsDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Dyslexia Mode Setting
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -96,15 +101,14 @@ fun SettingsDialog(
 
                 HorizontalDivider()
 
-                // Stylus Ink Color Setting
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Stylus Ink Color",
+                        text = "Stylus Ink Color & Width",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Choose your preferred handwriting ink color",
+                        text = "Choose your preferred handwriting ink color and stroke size",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -142,6 +146,74 @@ fun SettingsDialog(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Stylus Width",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = String.format(Locale.getDefault(), "%.1fx", selectedStylusWidth),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Slider(
+                        value = selectedStylusWidth,
+                        onValueChange = { newVal ->
+                            selectedStylusWidth = newVal
+                            AppSettings.setStylusWidth(context, newVal)
+                        },
+                        valueRange = 1f..3f
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Width Preview:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(8.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(20.dp)
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            val strokeW = 4f * selectedStylusWidth
+                            drawLine(
+                                color = Color(selectedInkColorArgb),
+                                start = Offset(0f, size.height / 2f),
+                                end = Offset(size.width, size.height / 2f),
+                                strokeWidth = strokeW,
+                                cap = StrokeCap.Round
+                            )
                         }
                     }
                 }

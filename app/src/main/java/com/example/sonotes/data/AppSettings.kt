@@ -14,14 +14,16 @@ object AppSettings {
     private const val KEY_DYSLEXIA_MODE = "dyslexia_mode"
     private const val KEY_STYLUS_COLOR = "stylus_color"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_STYLUS_WIDTH = "stylus_width"
+    const val DEFAULT_STYLUS_WIDTH = 1.0f
 
     val DEFAULT_STYLUS_COLORS = listOf(
-        Color(0xFF000000), // Classic Black
-        Color(0xFF1A237E), // Navy Blue
-        Color(0xFFB71C1C), // Crimson Red
-        Color(0xFF1B5E20), // Emerald Green
-        Color(0xFF4A148C), // Dark Purple
-        Color(0xFFFFFFFF)  // White / Light Gray
+        Color(0xFF000000),
+        Color(0xFF1A237E),
+        Color(0xFFB71C1C),
+        Color(0xFF1B5E20),
+        Color(0xFF4A148C),
+        Color(0xFFFFFFFF)
     )
 
     fun isDyslexiaModeEnabled(context: Context): Boolean {
@@ -53,5 +55,15 @@ object AppSettings {
     fun setThemeMode(context: Context, mode: AppThemeMode) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
+    }
+
+    fun getStylusWidth(context: Context): Float {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getFloat(KEY_STYLUS_WIDTH, DEFAULT_STYLUS_WIDTH)
+    }
+
+    fun setStylusWidth(context: Context, width: Float) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putFloat(KEY_STYLUS_WIDTH, width).apply()
     }
 }
