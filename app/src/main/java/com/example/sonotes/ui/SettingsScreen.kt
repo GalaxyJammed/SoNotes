@@ -351,7 +351,7 @@ fun SettingsScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "SoNotes Note-Taking App\nVersion 1.1.0",
+                        text = "SoNotes Note-Taking App\nVersion 1.2.0",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -21,7 +21,9 @@ data class Folder(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val parentId: Long? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val customOrder: Int = 0,
+    val deletedAt: Long? = null
 )
 
 @Entity(
@@ -44,5 +46,40 @@ data class Note(
     val searchText: String = "",
     val folderId: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val customOrder: Int = 0,
+    val deletedAt: Long? = null
+)
+
+@Entity(tableName = "tags")
+data class Tag(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val color: Int = 0,
+    val createdAt: Long = System.currentTimeMillis(),
+    val customOrder: Int = 0
+)
+
+@Entity(
+    tableName = "folder_tag_cross_ref",
+    primaryKeys = ["folderId", "tagId"],
+    foreignKeys = [
+        ForeignKey(
+            entity = Folder::class,
+            parentColumns = ["id"],
+            childColumns = ["folderId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = Tag::class,
+            parentColumns = ["id"],
+            childColumns = ["tagId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("folderId"), Index("tagId")]
+)
+data class FolderTagCrossRef(
+    val folderId: Long,
+    val tagId: Long
 )

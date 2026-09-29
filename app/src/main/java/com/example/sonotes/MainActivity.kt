@@ -19,8 +19,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -38,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,9 +62,14 @@ import com.example.sonotes.data.AppDatabase
 import com.example.sonotes.data.AppThemeMode
 import com.example.sonotes.data.AppSettings
 import com.example.sonotes.data.Folder
+import com.example.sonotes.data.Tag
 import com.example.sonotes.ui.BrowserScreen
+import com.example.sonotes.ui.TrashScreen
 import com.example.sonotes.ui.EditorScreen
 import com.example.sonotes.ui.SettingsScreen
+import com.example.sonotes.ui.TagBrowserScreen
+import com.example.sonotes.ui.TagDialog
+import com.example.sonotes.ui.tagColorToComposeColor
 import com.example.sonotes.ui.theme.SoNotesTheme
 import kotlinx.coroutines.launch
 
@@ -95,12 +105,32 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
     val allFolders by database.folderDao().observeChildren(null)
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val allTags by database.tagDao().observeAllTags()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val allCrossRefs by database.tagDao().observeAllCrossRefs()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val trashedFolders by database.folderDao().observeTrashedFolders()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val trashedNotes by database.noteDao().observeTrashedNotes()
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val totalTrashedCount = trashedFolders.size + trashedNotes.size
+
+    LaunchedEffect(Unit) {
+        database.purgeOldTrash()
+    }
+
     val navBackStackEntry by nav.currentBackStackEntryFlow.collectAsStateWithLifecycle(initialValue = nav.currentBackStackEntry)
     val currentRoute = navBackStackEntry?.destination?.route ?: ""
     val isParent = navBackStackEntry?.arguments?.getBoolean("isParent") ?: true
-    val gesturesEnabled = currentRoute.startsWith("browser") && isParent
+    val gesturesEnabled = (currentRoute.startsWith("browser") || currentRoute.startsWith("tag") || currentRoute == "trash") && isParent
 
+    var expandedTagIds by remember { mutableStateOf(setOf<Long>()) }
     var showNewFolderDialog by remember { mutableStateOf(false) }
+    var showNewTagDialog by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -133,20 +163,154 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    Text("Notebooks", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
+
+                    val primaryThemeColor = MaterialTheme.colorScheme.primary
+
                     LazyColumn(Modifier.weight(1f)) {
-                        items(allFolders, key = { "drawer_f${it.id}" }) { f ->
+                        item {
+                            Text("Tags", style = MaterialTheme.typography.titleMedium, color = primaryThemeColor)
+                            Spacer(Modifier.height(4.dp))
+                        }
+
+                        if (allTags.isEmpty()) {
+                            item {
+                                Text(
+                                    "No tags yet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp)
+                                )
+                            }
+                        } else {
+                            allTags.forEach { tag ->
+                                val tagColor = tagColorToComposeColor(tag.color, primaryThemeColor)
+                                val isExpanded = expandedTagIds.contains(tag.id)
+                                val tagFolderIds = allCrossRefs.filter { it.tagId == tag.id }.map { it.folderId }
+                                val tagFolders = allFolders.filter { tagFolderIds.contains(it.id) }
+
+                                item(key = "drawer_t_${tag.id}") {
+                                    ListItem(
+                                        headlineContent = { Text(tag.name) },
+                                        leadingContent = {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Label,
+                                                contentDescription = null,
+                                                tint = tagColor
+                                            )
+                                        },
+                                        trailingContent = {
+                                            IconButton(
+                                                onClick = {
+                                                    expandedTagIds = if (isExpanded) expandedTagIds - tag.id else expandedTagIds + tag.id
+                                                }
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                                    contentDescription = if (isExpanded) "Collapse Tag" else "Expand Tag"
+                                                )
+                                            }
+                                        },
+                                        modifier = Modifier.clickable {
+                                            scope.launch { drawerState.close() }
+                                            nav.navigate("tag/${tag.id}")
+                                        }
+                                    )
+                                }
+
+                                if (isExpanded) {
+                                    if (tagFolders.isEmpty()) {
+                                        item(key = "drawer_t_${tag.id}_empty") {
+                                            Text(
+                                                "No folders added",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(start = 56.dp, top = 2.dp, bottom = 6.dp)
+                                            )
+                                        }
+                                    } else {
+                                        items(tagFolders, key = { "drawer_t_${tag.id}_f_${it.id}" }) { f ->
+                                            ListItem(
+                                                headlineContent = { Text(f.name) },
+                                                leadingContent = {
+                                                    Icon(
+                                                        Icons.Default.Folder,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                },
+                                                modifier = Modifier
+                                                    .padding(start = 24.dp)
+                                                    .clickable {
+                                                        scope.launch { drawerState.close() }
+                                                        nav.navigate("browser/${f.id}?isParent=true")
+                                                    }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            Text("Notebooks", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(4.dp))
+                        }
+
+                        if (allFolders.isEmpty()) {
+                            item {
+                                Text(
+                                    "No notebooks yet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp)
+                                )
+                            }
+                        } else {
+                            items(allFolders, key = { "drawer_f_${it.id}" }) { f ->
+                                ListItem(
+                                    headlineContent = { Text(f.name) },
+                                    leadingContent = { Icon(Icons.Default.Folder, null) },
+                                    modifier = Modifier.clickable {
+                                        scope.launch { drawerState.close() }
+                                        nav.navigate("browser/${f.id}?isParent=true")
+                                    }
+                                )
+                            }
+                        }
+
+                        item {
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            Text("Trash Bin", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.height(4.dp))
+                        }
+
+                        item(key = "drawer_trash_bin") {
                             ListItem(
-                                headlineContent = { Text(f.name) },
-                                leadingContent = { Icon(Icons.Default.Folder, null) },
+                                headlineContent = { Text("Trash Bin") },
+                                supportingContent = {
+                                    Text(
+                                        if (totalTrashedCount == 0) "Empty"
+                                        else "$totalTrashedCount item${if (totalTrashedCount == 1) "" else "s"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                leadingContent = {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Trash Bin",
+                                        tint = if (totalTrashedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
                                 modifier = Modifier.clickable {
                                     scope.launch { drawerState.close() }
-                                    nav.navigate("browser/${f.id}?isParent=true")
+                                    nav.navigate("trash")
                                 }
                             )
                         }
                     }
+
                     TextButton(
                         onClick = {
                             scope.launch { drawerState.close() }
@@ -157,6 +321,18 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                         Icon(Icons.Default.CreateNewFolder, contentDescription = null)
                         Spacer(Modifier.padding(4.dp))
                         Text("New Notebook")
+                    }
+
+                    TextButton(
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            showNewTagDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null)
+                        Spacer(Modifier.padding(4.dp))
+                        Text("New Tag")
                     }
                 }
             }
@@ -195,6 +371,26 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                 )
             }
             composable(
+                route = "tag/{tagId}",
+                arguments = listOf(
+                    navArgument("tagId") { type = NavType.LongType }
+                )
+            ) { entry ->
+                val tagId = entry.arguments?.getLong("tagId") ?: -1L
+                TagBrowserScreen(
+                    tagId = tagId,
+                    onOpenFolder = { folderId -> nav.navigate("browser/$folderId?isParent=true") },
+                    onOpenDrawer = {
+                        if (!drawerState.isAnimationRunning) {
+                            scope.launch { drawerState.open() }
+                        }
+                    },
+                    onTagDeleted = {
+                        nav.popBackStack()
+                    }
+                )
+            }
+            composable(
                 route = "editor/{noteId}/{folderId}",
                 arguments = listOf(
                     navArgument("noteId") { type = NavType.LongType },
@@ -209,6 +405,15 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                 SettingsScreen(
                     onBack = { nav.popBackStack() },
                     onThemeChanged = onThemeChanged
+                )
+            }
+            composable("trash") {
+                TrashScreen(
+                    onOpenDrawer = {
+                        if (!drawerState.isAnimationRunning) {
+                            scope.launch { drawerState.open() }
+                        }
+                    }
                 )
             }
         }
@@ -240,6 +445,20 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
             },
             dismissButton = {
                 TextButton(onClick = { showNewFolderDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showNewTagDialog) {
+        TagDialog(
+            allFolders = allFolders,
+            onDismiss = { showNewTagDialog = false },
+            onSave = { name, color, selectedFolderIds ->
+                scope.launch {
+                    val newTagId = database.tagDao().insert(Tag(name = name, color = color))
+                    database.tagDao().setFoldersForTag(newTagId, selectedFolderIds)
+                }
+                showNewTagDialog = false
             }
         )
     }

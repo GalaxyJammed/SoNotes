@@ -129,36 +129,92 @@ data class ParsedTable(
     val rows: List<List<String>>
 )
 
+data class ParsedImage(
+    val alt: String,
+    val filePath: String,
+    val startIndex: Int,
+    val endIndex: Int
+)
+
 sealed class DocBlock {
     data class TextBlock(val text: String, val startIndex: Int, val endIndex: Int) : DocBlock()
     data class TableBlock(val table: ParsedTable) : DocBlock()
+    data class ImageBlock(val image: ParsedImage) : DocBlock()
+}
+
+fun parseMarkdownImages(text: String, tableRanges: List<IntRange> = emptyList()): List<ParsedImage> {
+    if (!text.contains("![")) return emptyList()
+    val regex = Regex("!\\[(.*?)\\]\\((.*?)\\)")
+    val results = mutableListOf<ParsedImage>()
+    regex.findAll(text).forEach { match ->
+        val range = match.range
+        val start = range.first
+        val end = range.last + 1
+        val insideTable = tableRanges.any { start >= it.first && end <= it.last }
+        if (!insideTable) {
+            results.add(
+                ParsedImage(
+                    alt = match.groupValues[1],
+                    filePath = match.groupValues[2],
+                    startIndex = start,
+                    endIndex = end
+                )
+            )
+        }
+    }
+    return results
+}
+
+private sealed interface SpecialBlock {
+    val startIndex: Int
+    val endIndex: Int
+}
+private data class TableItem(val table: ParsedTable) : SpecialBlock {
+    override val startIndex = table.startIndex
+    override val endIndex = table.endIndex
+}
+private data class ImageItem(val image: ParsedImage) : SpecialBlock {
+    override val startIndex = image.startIndex
+    override val endIndex = image.endIndex
 }
 
 fun parseDocBlocks(text: String): List<DocBlock> {
     val tables = parseMarkdownTables(text)
-    if (tables.isEmpty()) {
+    val tableRanges = tables.map { it.startIndex until it.endIndex }
+    val images = parseMarkdownImages(text, tableRanges)
+
+    if (tables.isEmpty() && images.isEmpty()) {
         return listOf(DocBlock.TextBlock(text, 0, text.length))
     }
+
+    val specialBlocks: List<SpecialBlock> = (tables.map { TableItem(it) } + images.map { ImageItem(it) })
+        .sortedBy { it.startIndex }
 
     val blocks = mutableListOf<DocBlock>()
     var currentIndex = 0
 
-    tables.forEach { table ->
-        if (table.startIndex > currentIndex) {
-            val segmentText = text.substring(currentIndex, table.startIndex)
-            blocks.add(DocBlock.TextBlock(segmentText, currentIndex, table.startIndex))
-        } else if (table.startIndex == 0 && currentIndex == 0) {
+    specialBlocks.forEach { special ->
+        if (special.startIndex > currentIndex) {
+            val segmentText = text.substring(currentIndex, special.startIndex)
+            blocks.add(DocBlock.TextBlock(segmentText, currentIndex, special.startIndex))
+        } else if (special.startIndex == 0 && currentIndex == 0) {
             blocks.add(DocBlock.TextBlock("", 0, 0))
         }
-        blocks.add(DocBlock.TableBlock(table))
-        currentIndex = table.endIndex
+
+        when (special) {
+            is TableItem -> blocks.add(DocBlock.TableBlock(special.table))
+            is ImageItem -> blocks.add(DocBlock.ImageBlock(special.image))
+        }
+        currentIndex = special.endIndex
     }
 
     if (currentIndex < text.length) {
         val segmentText = text.substring(currentIndex)
         blocks.add(DocBlock.TextBlock(segmentText, currentIndex, text.length))
-    } else if (currentIndex == text.length) {
+    } else if (currentIndex == text.length && blocks.isNotEmpty() && blocks.last() !is DocBlock.TextBlock) {
         blocks.add(DocBlock.TextBlock("", text.length, text.length))
+    } else if (blocks.isEmpty()) {
+        blocks.add(DocBlock.TextBlock("", 0, 0))
     }
 
     return blocks
@@ -844,67 +900,67 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                             }
                                         }
                                     }
-                                }
-                            }
+                                    is DocBlock.ImageBlock -> {
+                                        val parsedImage = block.image
+                                        val imgBitmap = rememberImageBitmapFromFile(parsedImage.filePath)
 
-                            val imageMatches = remember(editor.content.text) {
-                                Regex("!\\[(.*?)\\]\\((.*?)\\)").findAll(editor.content.text).toList()
-                            }
-
-                            if (imageMatches.isNotEmpty()) {
-                                Column(modifier = Modifier.padding(8.dp)) {
-                                    if (isEditMode) {
-                                        Text(
-                                            text = "📎 Attached Photos (${imageMatches.size})",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(bottom = 4.dp)
-                                        )
-                                    }
-                                    Row(
-                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        imageMatches.forEach { match ->
-                                            val filePath = match.groupValues[2]
-                                            val imgBitmap = rememberImageBitmapFromFile(filePath)
-                                            Card(
-                                                shape = RoundedCornerShape(8.dp),
-                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                                modifier = Modifier.size(120.dp, 100.dp)
+                                        Card(
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 8.dp, horizontal = 4.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .heightIn(min = 140.dp, max = 360.dp),
+                                                contentAlignment = Alignment.Center
                                             ) {
-                                                Box(Modifier.fillMaxSize()) {
-                                                    if (imgBitmap != null) {
-                                                        Image(
-                                                            bitmap = imgBitmap,
-                                                            contentDescription = "Attachment",
-                                                            contentScale = ContentScale.Crop,
-                                                            modifier = Modifier.fillMaxSize()
+                                                if (imgBitmap != null) {
+                                                    Image(
+                                                        bitmap = imgBitmap,
+                                                        contentDescription = parsedImage.alt.ifBlank { "Attached Image" },
+                                                        contentScale = ContentScale.Fit,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(4.dp)
+                                                    )
+                                                } else {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center,
+                                                        modifier = Modifier.padding(16.dp)
+                                                    ) {
+                                                        Text("📷", fontSize = 32.sp)
+                                                        Spacer(Modifier.height(4.dp))
+                                                        Text(
+                                                            text = parsedImage.alt.ifBlank { "Image" },
+                                                            style = MaterialTheme.typography.bodyMedium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                                         )
-                                                    } else {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .fillMaxSize()
-                                                                .background(Color.LightGray),
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            Text("📷 Image", fontSize = 12.sp)
-                                                        }
                                                     }
-                                                    if (isEditMode) {
-                                                        IconButton(
-                                                            onClick = {
-                                                                val newText = editor.content.text.removeRange(match.range)
-                                                                commit(EditorState(TextFieldValue(newText), richContentFromBody(newText)), true)
-                                                            },
-                                                            modifier = Modifier
-                                                                .align(Alignment.TopEnd)
-                                                                .size(24.dp)
-                                                                .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                                                        ) {
-                                                            Icon(Icons.Default.Close, contentDescription = "Delete Photo", tint = Color.White, modifier = Modifier.size(16.dp))
-                                                        }
+                                                }
+
+                                                if (isEditMode) {
+                                                    IconButton(
+                                                        onClick = {
+                                                            val updatedText = editor.content.text.removeRange(parsedImage.startIndex, parsedImage.endIndex)
+                                                            commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
+                                                        },
+                                                        modifier = Modifier
+                                                            .align(Alignment.TopEnd)
+                                                            .padding(8.dp)
+                                                            .size(28.dp)
+                                                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Close,
+                                                            contentDescription = "Delete Photo",
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
                                                     }
                                                 }
                                             }
