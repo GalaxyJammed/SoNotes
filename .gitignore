@@ -16,3 +16,4 @@ local.properties
 *.apk
 /app/build/
 *.aab
+/app/release/output-metadata.json

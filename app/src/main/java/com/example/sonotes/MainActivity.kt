@@ -95,10 +95,16 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
     val allFolders by database.folderDao().observeChildren(null)
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    val navBackStackEntry by nav.currentBackStackEntryFlow.collectAsStateWithLifecycle(initialValue = nav.currentBackStackEntry)
+    val currentRoute = navBackStackEntry?.destination?.route ?: ""
+    val isParent = navBackStackEntry?.arguments?.getBoolean("isParent") ?: true
+    val gesturesEnabled = currentRoute.startsWith("browser") && isParent
+
     var showNewFolderDialog by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = gesturesEnabled,
         drawerContent = {
             ModalDrawerSheet {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
@@ -172,11 +178,11 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                 )
             ) { entry ->
                 val folderId = entry.arguments?.getLong("folderId")?.takeIf { it != -1L }
-                val isParent = entry.arguments?.getBoolean("isParent") ?: (folderId == null)
-                val back: (() -> Unit)? = if (isParent) null else ({ nav.popBackStack() })
+                val parentArg = entry.arguments?.getBoolean("isParent") ?: (folderId == null)
+                val back: (() -> Unit)? = if (parentArg) null else ({ nav.popBackStack() })
                 BrowserScreen(
                     folderId = folderId,
-                    isParentFolder = isParent,
+                    isParentFolder = parentArg,
                     onOpenFolder = { id, parent -> nav.navigate("browser/$id?isParent=$parent") },
                     onOpenNote = { nav.navigate("editor/$it/${folderId ?: -1L}") },
                     onNewNote = { nav.navigate("editor/-1/${folderId ?: -1L}") },
