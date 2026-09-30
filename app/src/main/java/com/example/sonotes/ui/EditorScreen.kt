@@ -397,7 +397,6 @@ fun InlineImageView(
         }
 
         if (isEditMode) {
-            // Rotate icon on Top Left
             IconButton(
                 onClick = { onRotate(parsedImage) },
                 modifier = Modifier
@@ -413,7 +412,6 @@ fun InlineImageView(
                 )
             }
 
-            // Resize icon on Bottom Right
             IconButton(
                 onClick = { onResize(parsedImage) },
                 modifier = Modifier
@@ -429,7 +427,6 @@ fun InlineImageView(
                 )
             }
 
-            // Delete icon
             IconButton(
                 onClick = { onDelete(parsedImage) },
                 modifier = Modifier
@@ -534,8 +531,8 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
             img.width < 150 -> 180 to 135
             img.width < 210 -> 240 to 180
             img.width < 280 -> 320 to 240
-            img.width < 360 -> 380 to 280 // Full width to right side of note
-            else -> 120 to 90 // cycle back to small
+            img.width < 360 -> 380 to 280
+            else -> 120 to 90
         }
         val cleanPath = img.filePath.substringBefore('?')
         val newRawUrl = "$cleanPath?w=$nextW&h=$nextH&r=${img.rotation}"

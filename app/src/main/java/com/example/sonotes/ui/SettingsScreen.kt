@@ -143,10 +143,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Category: Appearance
             CategoryHeader("Appearance")
 
-            // Option 1: Appearance & Theme
             OptionCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -276,7 +274,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Option 2: Stylus Ink Color & Width
             OptionCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -411,10 +408,8 @@ fun SettingsScreen(
                 }
             }
 
-            // Category: Accessibility
             CategoryHeader("Accessibility")
 
-            // Option 3: Dyslexia Assist Mode
             OptionCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -461,10 +456,8 @@ fun SettingsScreen(
                 }
             }
 
-            // Category: Security
             CategoryHeader("Security")
 
-            // Option 4: Fingerprint Lock
             OptionCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -511,7 +504,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Option 5: PIN Lock
             OptionCard {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -586,10 +578,8 @@ fun SettingsScreen(
                 }
             }
 
-            // Category: Sync
             CategoryHeader("Sync")
 
-            // Option 7: Import
             OptionCard {
                 Row(
                     modifier = Modifier
@@ -632,7 +622,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Option 8: Export
             OptionCard {
                 Row(
                     modifier = Modifier
@@ -675,7 +664,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Option 9: Automatic Export
             OptionCard {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
@@ -781,10 +769,8 @@ fun SettingsScreen(
                 }
             }
 
-            // Category: About
             CategoryHeader("About")
 
-            // Option 10: About SoNotes
             OptionCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -802,7 +788,7 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "SoNotes Note-Taking App\nVersion 1.2.0",
+                    text = "SoNotes Note-Taking App\nVersion 1.3.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
