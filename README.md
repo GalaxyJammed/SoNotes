@@ -46,6 +46,7 @@ SoNotes is a free, open-source, privacy-first note-taking app for Android. Handw
 - Nest as deeply as you need to keep everything organized your way
 - Searching and Filtering to go through your folders and notes faster
 - Tags to organize your folders however you like (Work, Gaming, School etc)
+- Trash that keeps deleted folders/notes for up-to 30 days
 
 ### 🖼️ Image Support
 - Add images to your notes alongside your handwriting and text
