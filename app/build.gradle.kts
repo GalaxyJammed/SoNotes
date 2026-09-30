@@ -53,6 +53,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("com.google.mlkit:digital-ink-recognition:19.0.0")
     implementation(libs.mlkit.text)
     testImplementation(libs.junit)

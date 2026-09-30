@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -74,6 +75,7 @@ fun BrowserScreen(
     onOpenNote: (Long) -> Unit,
     onNewNote: () -> Unit,
     onOpenDrawer: () -> Unit,
+    onOpenSearch: () -> Unit,
     onBack: (() -> Unit)?
 ) {
     val context = LocalContext.current
@@ -125,6 +127,9 @@ fun BrowserScreen(
                             Icon(Icons.Default.Check, contentDescription = "Lock Order")
                         }
                     } else {
+                        IconButton(onClick = onOpenSearch) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
                         IconButton(onClick = { showFilterDialog = true }) {
                             Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort and Filter")
                         }
@@ -379,96 +384,113 @@ fun FolderOrNoteContent(
     } else {
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
-                when (item) {
-                    is BrowserListItem.FolderItem -> {
-                        val folder = item.folder
-                        ListItem(
-                            headlineContent = { Text(folder.name) },
-                            leadingContent = { Icon(Icons.Default.Folder, null) },
-                            trailingContent = {
-                                if (isReorderMode) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(
-                                            onClick = { moveItem(index, index - 1) },
-                                            enabled = index > 0
-                                        ) {
-                                            Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up")
-                                        }
-                                        IconButton(
-                                            onClick = { moveItem(index, index + 1) },
-                                            enabled = index < items.lastIndex
-                                        ) {
-                                            Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
-                                        }
-                                        Icon(
-                                            Icons.Default.DragHandle,
-                                            contentDescription = "Drag Handle",
-                                            modifier = Modifier.padding(start = 4.dp, end = 8.dp)
-                                        )
-                                    }
-                                } else {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (showDate) {
-                                            Text(
-                                                text = formatSimplifiedDate(folder.createdAt),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(end = 8.dp)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    when (item) {
+                        is BrowserListItem.FolderItem -> {
+                            val folder = item.folder
+                            ListItem(
+                                headlineContent = { Text(folder.name) },
+                                leadingContent = { Icon(Icons.Default.Folder, null) },
+                                trailingContent = {
+                                    if (isReorderMode) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = { moveItem(index, index - 1) },
+                                                enabled = index > 0
+                                            ) {
+                                                Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up")
+                                            }
+                                            IconButton(
+                                                onClick = { moveItem(index, index + 1) },
+                                                enabled = index < items.lastIndex
+                                            ) {
+                                                Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
+                                            }
+                                            Icon(
+                                                Icons.Default.DragHandle,
+                                                contentDescription = "Drag Handle",
+                                                modifier = Modifier.padding(start = 4.dp, end = 8.dp)
                                             )
                                         }
-                                        IconButton(onClick = { onDeleteFolder(folder) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete folder")
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (showDate) {
+                                                Text(
+                                                    text = formatSimplifiedDate(folder.createdAt),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(end = 8.dp)
+                                                )
+                                            }
+                                            IconButton(onClick = { onDeleteFolder(folder) }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete folder")
+                                            }
                                         }
                                     }
-                                }
-                            },
-                            modifier = if (!isReorderMode) Modifier.clickable { onOpenFolder(folder.id) } else Modifier
-                        )
+                                },
+                                modifier = if (!isReorderMode) Modifier.clickable { onOpenFolder(folder.id) } else Modifier
+                            )
+                        }
+                        is BrowserListItem.NoteItem -> {
+                            val note = item.note
+                            ListItem(
+                                headlineContent = { Text(note.title.ifBlank { "Untitled" }) },
+                                leadingContent = { Icon(Icons.Default.Description, null) },
+                                trailingContent = {
+                                    if (isReorderMode) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(
+                                                onClick = { moveItem(index, index - 1) },
+                                                enabled = index > 0
+                                            ) {
+                                                Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up")
+                                            }
+                                            IconButton(
+                                                onClick = { moveItem(index, index + 1) },
+                                                enabled = index < items.lastIndex
+                                            ) {
+                                                Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
+                                            }
+                                            Icon(
+                                                Icons.Default.DragHandle,
+                                                contentDescription = "Drag Handle",
+                                                modifier = Modifier.padding(start = 4.dp, end = 8.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (showDate) {
+                                                Text(
+                                                    text = formatSimplifiedDate(note.createdAt),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(end = 8.dp)
+                                                )
+                                            }
+                                            IconButton(onClick = { onDeleteNote(note) }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete note")
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = if (!isReorderMode) Modifier.clickable { onOpenNote(note.id) } else Modifier
+                            )
+                        }
                     }
-                    is BrowserListItem.NoteItem -> {
-                        val note = item.note
-                        ListItem(
-                            headlineContent = { Text(note.title.ifBlank { "Untitled" }) },
-                            leadingContent = { Icon(Icons.Default.Description, null) },
-                            trailingContent = {
-                                if (isReorderMode) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        IconButton(
-                                            onClick = { moveItem(index, index - 1) },
-                                            enabled = index > 0
-                                        ) {
-                                            Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up")
-                                        }
-                                        IconButton(
-                                            onClick = { moveItem(index, index + 1) },
-                                            enabled = index < items.lastIndex
-                                        ) {
-                                            Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down")
-                                        }
-                                        Icon(
-                                            Icons.Default.DragHandle,
-                                            contentDescription = "Drag Handle",
-                                            modifier = Modifier.padding(start = 4.dp, end = 8.dp)
-                                        )
-                                    }
-                                } else {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (showDate) {
-                                            Text(
-                                                text = formatSimplifiedDate(note.createdAt),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.padding(end = 8.dp)
-                                            )
-                                        }
-                                        IconButton(onClick = { onDeleteNote(note) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete note")
-                                        }
-                                    }
-                                }
-                            },
-                            modifier = if (!isReorderMode) Modifier.clickable { onOpenNote(note.id) } else Modifier
-                        )
+
+                    if (index < items.lastIndex) {
+                        val isCustomOrder = sortOption == SortOption.CUSTOM_ORDER
+                        val currentItem = items[index]
+                        val nextItem = items[index + 1]
+                        val isFolderNoteClash = (currentItem is BrowserListItem.FolderItem && nextItem is BrowserListItem.NoteItem) ||
+                                                (currentItem is BrowserListItem.NoteItem && nextItem is BrowserListItem.FolderItem)
+
+                        val dividerThickness = if (!isCustomOrder && isFolderNoteClash) {
+                            4.dp
+                        } else {
+                            1.dp
+                        }
+                        HorizontalDivider(thickness = dividerThickness)
                     }
                 }
             }

@@ -23,7 +23,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -95,7 +97,11 @@ fun SettingsDialog(
                         onCheckedChange = { checked ->
                             isDyslexiaEnabled = checked
                             AppSettings.setDyslexiaModeEnabled(context, checked)
-                        }
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
 
@@ -175,7 +181,12 @@ fun SettingsDialog(
                             selectedStylusWidth = newVal
                             AppSettings.setStylusWidth(context, newVal)
                         },
-                        valueRange = 1f..3f
+                        valueRange = 1f..3f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
                     )
 
                     Spacer(Modifier.height(6.dp))

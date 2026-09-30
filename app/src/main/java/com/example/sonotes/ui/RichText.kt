@@ -637,7 +637,8 @@ fun EditorState.insertTable(rows: Int = 2, cols: Int = 2): EditorState {
 
 fun EditorState.insertImage(path: String, alt: String = "Attachment"): EditorState {
     val pos = value.selection.min.coerceIn(0, content.text.length)
-    val tag = "\n![$alt]($path)\n"
+    val cleanPath = path.substringBefore('?')
+    val tag = "![%s](%s?w=120&h=90&r=0) ".format(alt, cleanPath)
     val updatedContent = content.replace(pos, pos, tag, typing)
     val newCursor = (pos + tag.length).coerceAtMost(updatedContent.text.length)
     return copy(

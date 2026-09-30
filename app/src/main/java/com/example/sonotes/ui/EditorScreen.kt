@@ -8,12 +8,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,7 +44,10 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
@@ -53,6 +58,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -67,6 +73,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -82,6 +89,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -132,8 +140,12 @@ data class ParsedTable(
 data class ParsedImage(
     val alt: String,
     val filePath: String,
+    val width: Int = 160,
+    val height: Int = 120,
+    val rotation: Float = 0f,
     val startIndex: Int,
-    val endIndex: Int
+    val endIndex: Int,
+    val rawUrl: String
 )
 
 sealed class DocBlock {
@@ -152,12 +164,22 @@ fun parseMarkdownImages(text: String, tableRanges: List<IntRange> = emptyList())
         val end = range.last + 1
         val insideTable = tableRanges.any { start >= it.first && end <= it.last }
         if (!insideTable) {
+            val alt = match.groupValues[1]
+            val rawUrl = match.groupValues[2]
+            val uri = Uri.parse(rawUrl)
+            val w = uri.getQueryParameter("w")?.toIntOrNull() ?: 160
+            val h = uri.getQueryParameter("h")?.toIntOrNull() ?: 120
+            val r = uri.getQueryParameter("r")?.toFloatOrNull() ?: 0f
             results.add(
                 ParsedImage(
-                    alt = match.groupValues[1],
-                    filePath = match.groupValues[2],
+                    alt = alt,
+                    filePath = rawUrl,
+                    width = w,
+                    height = h,
+                    rotation = r,
                     startIndex = start,
-                    endIndex = end
+                    endIndex = end,
+                    rawUrl = rawUrl
                 )
             )
         }
@@ -332,6 +354,100 @@ fun rememberImageBitmapFromFile(filePath: String): ImageBitmap? {
     }
 }
 
+@Composable
+fun InlineImageView(
+    parsedImage: ParsedImage,
+    isEditMode: Boolean,
+    onResize: (ParsedImage) -> Unit,
+    onRotate: (ParsedImage) -> Unit,
+    onDelete: (ParsedImage) -> Unit
+) {
+    val imgBitmap = rememberImageBitmapFromFile(parsedImage.filePath.substringBefore('?'))
+
+    Box(
+        modifier = Modifier
+            .padding(4.dp)
+            .width(parsedImage.width.dp)
+            .height(parsedImage.height.dp)
+    ) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isEditMode) 4.dp else 2.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(rotationZ = parsedImage.rotation),
+                contentAlignment = Alignment.Center
+            ) {
+                if (imgBitmap != null) {
+                    Image(
+                        bitmap = imgBitmap,
+                        contentDescription = parsedImage.alt,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text("📷", fontSize = 24.sp)
+                }
+            }
+        }
+
+        if (isEditMode) {
+            // Rotate icon on Top Left
+            IconButton(
+                onClick = { onRotate(parsedImage) },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(28.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Rotate Image",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Resize icon on Bottom Right
+            IconButton(
+                onClick = { onResize(parsedImage) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(28.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.OpenInFull,
+                    contentDescription = "Resize Image",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            // Delete icon
+            IconButton(
+                onClick = { onDelete(parsedImage) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(28.dp)
+                    .background(Color.Red.copy(alpha = 0.7f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Delete Image",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
@@ -411,6 +527,35 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                 commit(editor.insertImage(sourceUri.toString(), "Photo"), true)
             }
         }
+    }
+
+    fun handleResizeImage(img: ParsedImage) {
+        val (nextW, nextH) = when {
+            img.width < 150 -> 180 to 135
+            img.width < 210 -> 240 to 180
+            img.width < 280 -> 320 to 240
+            img.width < 360 -> 380 to 280 // Full width to right side of note
+            else -> 120 to 90 // cycle back to small
+        }
+        val cleanPath = img.filePath.substringBefore('?')
+        val newRawUrl = "$cleanPath?w=$nextW&h=$nextH&r=${img.rotation}"
+        val newTag = "![${img.alt}]($newRawUrl)"
+        val updatedText = editor.content.text.replaceRange(img.startIndex, img.endIndex, newTag)
+        commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
+    }
+
+    fun handleRotateImage(img: ParsedImage) {
+        val nextR = (img.rotation + 90f) % 360f
+        val cleanPath = img.filePath.substringBefore('?')
+        val newRawUrl = "$cleanPath?w=${img.width}&h=${img.height}&r=$nextR"
+        val newTag = "![${img.alt}]($newRawUrl)"
+        val updatedText = editor.content.text.replaceRange(img.startIndex, img.endIndex, newTag)
+        commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
+    }
+
+    fun handleDeleteImage(img: ParsedImage) {
+        val updatedText = editor.content.text.removeRange(img.startIndex, img.endIndex)
+        commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
     }
 
     LaunchedEffect(isStylusMode) {
@@ -713,39 +858,85 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                         "Empty note. Tap the Edit button top right to start writing.",
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
-                                                } else if (segmentText.isNotEmpty()) {
-                                                    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-                                                    val cleanAnnotated = remember(segContent, block.startIndex) {
-                                                        segContent.toCleanAnnotated(block.startIndex)
-                                                    }
+                                                } else if (block.text.isNotEmpty()) {
+                                                    val images = remember(block.text) { parseMarkdownImages(block.text) }
+                                                    if (images.isEmpty()) {
+                                                        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+                                                        val cleanAnnotated = remember(segContent, block.startIndex) {
+                                                            segContent.toCleanAnnotated(block.startIndex)
+                                                        }
 
-                                                    Text(
-                                                        text = cleanAnnotated,
-                                                        style = TextStyle(
-                                                            color = MaterialTheme.colorScheme.onSurface,
-                                                            fontSize = 16.sp,
-                                                            lineHeight = 24.sp
-                                                        ),
-                                                        onTextLayout = { layoutResult = it },
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .pointerInput(cleanAnnotated) {
-                                                                detectTapGestures { tapOffset ->
-                                                                    layoutResult?.let { textLayoutResult ->
-                                                                        val pos = textLayoutResult.getOffsetForPosition(tapOffset)
-                                                                        cleanAnnotated
-                                                                            .getStringAnnotations(tag = "TODO_TOGGLE", start = pos, end = pos)
-                                                                            .firstOrNull()?.let { annotation ->
-                                                                                val origPos = annotation.item.toIntOrNull()
-                                                                                if (origPos != null) {
-                                                                                    val toggled = editor.toggleCheckAtPosition(origPos)
-                                                                                    commit(toggled, true)
+                                                        Text(
+                                                            text = cleanAnnotated,
+                                                            style = TextStyle(
+                                                                color = MaterialTheme.colorScheme.onSurface,
+                                                                fontSize = 16.sp,
+                                                                lineHeight = 24.sp
+                                                            ),
+                                                            onTextLayout = { layoutResult = it },
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .pointerInput(cleanAnnotated) {
+                                                                    detectTapGestures { tapOffset ->
+                                                                        layoutResult?.let { textLayoutResult ->
+                                                                            val pos = textLayoutResult.getOffsetForPosition(tapOffset)
+                                                                            cleanAnnotated
+                                                                                .getStringAnnotations(tag = "TODO_TOGGLE", start = pos, end = pos)
+                                                                                .firstOrNull()?.let { annotation ->
+                                                                                    val origPos = annotation.item.toIntOrNull()
+                                                                                    if (origPos != null) {
+                                                                                        val toggled = editor.toggleCheckAtPosition(origPos)
+                                                                                        commit(toggled, true)
+                                                                                    }
                                                                                 }
-                                                                            }
+                                                                        }
                                                                     }
                                                                 }
+                                                        )
+                                                    } else {
+                                                        FlowRow(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            var lastIdx = 0
+                                                            images.forEach { img ->
+                                                                if (img.startIndex > lastIdx) {
+                                                                    val subAnnotated = segContent.toCleanAnnotated(block.startIndex + lastIdx)
+                                                                    Text(
+                                                                        text = subAnnotated,
+                                                                        style = TextStyle(
+                                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                                            fontSize = 16.sp,
+                                                                            lineHeight = 24.sp
+                                                                        )
+                                                                    )
+                                                                }
+                                                                InlineImageView(
+                                                                    parsedImage = img.copy(
+                                                                        startIndex = block.startIndex + img.startIndex,
+                                                                        endIndex = block.startIndex + img.endIndex
+                                                                    ),
+                                                                    isEditMode = isEditMode,
+                                                                    onResize = ::handleResizeImage,
+                                                                    onRotate = ::handleRotateImage,
+                                                                    onDelete = ::handleDeleteImage
+                                                                )
+                                                                lastIdx = img.endIndex
                                                             }
-                                                    )
+                                                            if (lastIdx < block.text.length) {
+                                                                val subAnnotated = segContent.toCleanAnnotated(block.startIndex + lastIdx)
+                                                                Text(
+                                                                    text = subAnnotated,
+                                                                    style = TextStyle(
+                                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                                        fontSize = 16.sp,
+                                                                        lineHeight = 24.sp
+                                                                    )
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -754,7 +945,8 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                         val parsedTable = block.table
                                         Card(
                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = RoundedCornerShape(16.dp),
+                                            border = BorderStroke(2.dp, MaterialTheme.colorScheme.outline),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(8.dp)
@@ -878,7 +1070,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                         }
                                                     }
 
-                                                    if (isEditMode) {
+                                                                                    if (isEditMode) {
                                                         Spacer(Modifier.width(6.dp))
 
                                                         IconButton(
@@ -901,70 +1093,13 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                         }
                                     }
                                     is DocBlock.ImageBlock -> {
-                                        val parsedImage = block.image
-                                        val imgBitmap = rememberImageBitmapFromFile(parsedImage.filePath)
-
-                                        Card(
-                                            shape = RoundedCornerShape(12.dp),
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 8.dp, horizontal = 4.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .heightIn(min = 140.dp, max = 360.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                if (imgBitmap != null) {
-                                                    Image(
-                                                        bitmap = imgBitmap,
-                                                        contentDescription = parsedImage.alt.ifBlank { "Attached Image" },
-                                                        contentScale = ContentScale.Fit,
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(4.dp)
-                                                    )
-                                                } else {
-                                                    Column(
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center,
-                                                        modifier = Modifier.padding(16.dp)
-                                                    ) {
-                                                        Text("📷", fontSize = 32.sp)
-                                                        Spacer(Modifier.height(4.dp))
-                                                        Text(
-                                                            text = parsedImage.alt.ifBlank { "Image" },
-                                                            style = MaterialTheme.typography.bodyMedium,
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-
-                                                if (isEditMode) {
-                                                    IconButton(
-                                                        onClick = {
-                                                            val updatedText = editor.content.text.removeRange(parsedImage.startIndex, parsedImage.endIndex)
-                                                            commit(EditorState(TextFieldValue(updatedText), richContentFromBody(updatedText)), true)
-                                                        },
-                                                        modifier = Modifier
-                                                            .align(Alignment.TopEnd)
-                                                            .padding(8.dp)
-                                                            .size(28.dp)
-                                                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Close,
-                                                            contentDescription = "Delete Photo",
-                                                            tint = Color.White,
-                                                            modifier = Modifier.size(18.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        InlineImageView(
+                                            parsedImage = block.image,
+                                            isEditMode = isEditMode,
+                                            onResize = ::handleResizeImage,
+                                            onRotate = ::handleRotateImage,
+                                            onDelete = ::handleDeleteImage
+                                        )
                                     }
                                 }
                             }

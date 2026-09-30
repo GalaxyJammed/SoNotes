@@ -4,9 +4,10 @@ import android.content.Context
 import androidx.compose.ui.graphics.Color
 
 enum class AppThemeMode(val displayName: String) {
-    SYSTEM("💻 System"),
-    LIGHT("☀️ Light"),
-    DARK("🌙 Dark")
+    SYSTEM("System"),
+    WHITE_CIRCLE("White Mode"),
+    BLACK_CIRCLE("Dark Mode"),
+    BURGUNDY_CIRCLE("Burgundy Mode")
 }
 
 enum class SortOption(val displayName: String) {
@@ -19,6 +20,11 @@ enum class SortOption(val displayName: String) {
     CUSTOM_ORDER("Custom Order")
 }
 
+enum class UnlockMethod(val displayName: String) {
+    FINGERPRINT("Fingerprint"),
+    PIN("PIN")
+}
+
 object AppSettings {
     private const val PREFS_NAME = "sonotes_settings"
     private const val KEY_DYSLEXIA_MODE = "dyslexia_mode"
@@ -26,6 +32,13 @@ object AppSettings {
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_STYLUS_WIDTH = "stylus_width"
     private const val KEY_SORT_OPTION = "sort_option"
+    private const val KEY_FINGERPRINT_ENABLED = "fingerprint_enabled"
+    private const val KEY_PIN_ENABLED = "pin_enabled"
+    private const val KEY_PIN_CODE = "pin_code"
+    private const val KEY_PREFERRED_UNLOCK = "preferred_unlock"
+    private const val KEY_AUTO_EXPORT_ENABLED = "auto_export_enabled"
+    private const val KEY_AUTO_EXPORT_DAYS = "auto_export_days"
+
     const val DEFAULT_STYLUS_WIDTH = 1.0f
 
     val DEFAULT_STYLUS_COLORS = listOf(
@@ -71,7 +84,15 @@ object AppSettings {
     fun getThemeMode(context: Context): AppThemeMode {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val name = prefs.getString(KEY_THEME_MODE, AppThemeMode.SYSTEM.name) ?: AppThemeMode.SYSTEM.name
-        return try { AppThemeMode.valueOf(name) } catch (_: Exception) { AppThemeMode.SYSTEM }
+        return try {
+            AppThemeMode.valueOf(name)
+        } catch (_: Exception) {
+            when (name) {
+                "LIGHT" -> AppThemeMode.WHITE_CIRCLE
+                "DARK" -> AppThemeMode.BLACK_CIRCLE
+                else -> AppThemeMode.SYSTEM
+            }
+        }
     }
 
     fun setThemeMode(context: Context, mode: AppThemeMode) {
@@ -88,4 +109,66 @@ object AppSettings {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putFloat(KEY_STYLUS_WIDTH, width).apply()
     }
+
+    fun isFingerprintEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_FINGERPRINT_ENABLED, false)
+    }
+
+    fun setFingerprintEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_FINGERPRINT_ENABLED, enabled).apply()
+    }
+
+    fun isPinEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_PIN_ENABLED, false)
+    }
+
+    fun setPinEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_PIN_ENABLED, enabled).apply()
+    }
+
+    fun getPinCode(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_PIN_CODE, "") ?: ""
+    }
+
+    fun setPinCode(context: Context, pin: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_PIN_CODE, pin).apply()
+    }
+
+    fun getPreferredUnlockMethod(context: Context): UnlockMethod {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val name = prefs.getString(KEY_PREFERRED_UNLOCK, UnlockMethod.FINGERPRINT.name) ?: UnlockMethod.FINGERPRINT.name
+        return try { UnlockMethod.valueOf(name) } catch (_: Exception) { UnlockMethod.FINGERPRINT }
+    }
+
+    fun setPreferredUnlockMethod(context: Context, method: UnlockMethod) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_PREFERRED_UNLOCK, method.name).apply()
+    }
+
+    fun isAutoExportEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_AUTO_EXPORT_ENABLED, false)
+    }
+
+    fun setAutoExportEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_AUTO_EXPORT_ENABLED, enabled).apply()
+    }
+
+    fun getAutoExportDays(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getInt(KEY_AUTO_EXPORT_DAYS, 7)
+    }
+
+    fun setAutoExportDays(context: Context, days: Int) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putInt(KEY_AUTO_EXPORT_DAYS, days).apply()
+    }
 }
+

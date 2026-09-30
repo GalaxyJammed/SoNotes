@@ -1,14 +1,12 @@
 package com.example.sonotes
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,6 +32,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -42,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,8 +50,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -59,35 +64,71 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.sonotes.data.AppDatabase
-import com.example.sonotes.data.AppThemeMode
 import com.example.sonotes.data.AppSettings
+import com.example.sonotes.data.AppThemeMode
 import com.example.sonotes.data.Folder
 import com.example.sonotes.data.Tag
 import com.example.sonotes.ui.BrowserScreen
-import com.example.sonotes.ui.TrashScreen
 import com.example.sonotes.ui.EditorScreen
+import com.example.sonotes.ui.LockScreen
+import com.example.sonotes.ui.SearchScreen
 import com.example.sonotes.ui.SettingsScreen
 import com.example.sonotes.ui.TagBrowserScreen
 import com.example.sonotes.ui.TagDialog
+import com.example.sonotes.ui.TrashScreen
 import com.example.sonotes.ui.tagColorToComposeColor
 import com.example.sonotes.ui.theme.SoNotesTheme
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val context = LocalContext.current
             var themeMode by remember { mutableStateOf(AppSettings.getThemeMode(context)) }
-            val isDarkTheme = when (themeMode) {
-                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
-                AppThemeMode.LIGHT -> false
-                AppThemeMode.DARK -> true
+
+            val lifecycleOwner = LocalLifecycleOwner.current
+            val initialFingerprint = AppSettings.isFingerprintEnabled(context)
+            val initialPin = AppSettings.isPinEnabled(context)
+            val initialPinCode = AppSettings.getPinCode(context)
+
+            var isLocked by remember {
+                mutableStateOf(initialFingerprint || (initialPin && initialPinCode.isNotBlank()))
             }
 
-            SoNotesTheme(darkTheme = isDarkTheme) {
-                AppNav(onThemeChanged = { newMode -> themeMode = newMode })
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_START) {
+                        val fingerprintNow = AppSettings.isFingerprintEnabled(context)
+                        val pinNow = AppSettings.isPinEnabled(context)
+                        val pinCodeNow = AppSettings.getPinCode(context)
+                        if (fingerprintNow || (pinNow && pinCodeNow.isNotBlank())) {
+                            isLocked = true
+                        }
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose {
+                    lifecycleOwner.lifecycle.removeObserver(observer)
+                }
+            }
+
+            SoNotesTheme(themeMode = themeMode) {
+                val fingerprintNow = AppSettings.isFingerprintEnabled(context)
+                val pinNow = AppSettings.isPinEnabled(context)
+                val pinCodeNow = AppSettings.getPinCode(context)
+
+                if (isLocked && (fingerprintNow || (pinNow && pinCodeNow.isNotBlank()))) {
+                    LockScreen(
+                        isFingerprintEnabled = fingerprintNow,
+                        isPinEnabled = pinNow,
+                        correctPin = pinCodeNow,
+                        onUnlockSuccess = { isLocked = false }
+                    )
+                } else {
+                    AppNav(onThemeChanged = { newMode -> themeMode = newMode })
+                }
             }
         }
     }
@@ -125,7 +166,9 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
 
     val navBackStackEntry by nav.currentBackStackEntryFlow.collectAsStateWithLifecycle(initialValue = nav.currentBackStackEntry)
     val currentRoute = navBackStackEntry?.destination?.route ?: ""
-    val isParent = navBackStackEntry?.arguments?.getBoolean("isParent") ?: true
+    val isParent = navBackStackEntry?.arguments?.let {
+        if (it.containsKey("isParent")) it.getBoolean("isParent") else true
+    } ?: true
     val gesturesEnabled = (currentRoute.startsWith("browser") || currentRoute.startsWith("tag") || currentRoute == "trash") && isParent
 
     var expandedTagIds by remember { mutableStateOf(setOf<Long>()) }
@@ -136,7 +179,9 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
         drawerState = drawerState,
         gesturesEnabled = gesturesEnabled,
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface
+            ) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -155,6 +200,7 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                     ListItem(
                         headlineContent = { Text("All Notes") },
                         leadingContent = { Icon(Icons.Default.Description, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         modifier = Modifier.clickable {
                             scope.launch { drawerState.close() }
                             nav.navigate("browser/-1?isParent=true") {
@@ -198,6 +244,7 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                                                 tint = tagColor
                                             )
                                         },
+                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                         trailingContent = {
                                             IconButton(
                                                 onClick = {
@@ -212,7 +259,7 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                                         },
                                         modifier = Modifier.clickable {
                                             scope.launch { drawerState.close() }
-                                            nav.navigate("tag/${tag.id}")
+                                            nav.navigate("tag/${tag.id}?isParent=true")
                                         }
                                     )
                                 }
@@ -238,6 +285,7 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                                                         tint = MaterialTheme.colorScheme.primary
                                                     )
                                                 },
+                                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                                 modifier = Modifier
                                                     .padding(start = 24.dp)
                                                     .clickable {
@@ -271,6 +319,7 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                                 ListItem(
                                     headlineContent = { Text(f.name) },
                                     leadingContent = { Icon(Icons.Default.Folder, null) },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                     modifier = Modifier.clickable {
                                         scope.launch { drawerState.close() }
                                         nav.navigate("browser/${f.id}?isParent=true")
@@ -303,6 +352,7 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                                         tint = if (totalTrashedCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                                 modifier = Modifier.clickable {
                                     scope.launch { drawerState.close() }
                                     nav.navigate("trash")
@@ -367,13 +417,15 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                             scope.launch { drawerState.open() }
                         }
                     },
+                    onOpenSearch = { nav.navigate("search") },
                     onBack = back
                 )
             }
             composable(
-                route = "tag/{tagId}",
+                route = "tag/{tagId}?isParent={isParent}",
                 arguments = listOf(
-                    navArgument("tagId") { type = NavType.LongType }
+                    navArgument("tagId") { type = NavType.LongType },
+                    navArgument("isParent") { type = NavType.BoolType; defaultValue = true }
                 )
             ) { entry ->
                 val tagId = entry.arguments?.getLong("tagId") ?: -1L
@@ -385,9 +437,17 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
                             scope.launch { drawerState.open() }
                         }
                     },
+                    onOpenSearch = { nav.navigate("search") },
                     onTagDeleted = {
                         nav.popBackStack()
                     }
+                )
+            }
+            composable("search") {
+                SearchScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenFolder = { folderId -> nav.navigate("browser/$folderId?isParent=false") },
+                    onOpenNote = { noteId, folderId -> nav.navigate("editor/$noteId/${folderId ?: -1L}") }
                 )
             }
             composable(
