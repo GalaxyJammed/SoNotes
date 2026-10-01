@@ -25,8 +25,6 @@ SoNotes is a free, open-source, privacy-first note-taking app for Android. Handw
   <em>"Your notes, however you like"</em>
 </div>
 
----
-
 ## Note Taking Features
 
 ### ✒️ Smart Stylus Support
@@ -66,7 +64,6 @@ SoNotes is a free, open-source, privacy-first note-taking app for Android. Handw
 ### 🚀 More to Come
 - SoNotes is a work in progress and new features are on the way.
 
----
 
 ## 🛠️ Setup
 
@@ -75,8 +72,6 @@ SoNotes is a free, open-source, privacy-first note-taking app for Android. Handw
 3. Create a folder or a note and start writing
 
 Simple and easy!
-
----
 
 ## ❓ Frequently Asked Questions
 
@@ -101,9 +96,6 @@ There is no limit. You can create infinite folders, subfolders, and notes.
 ### What is the minimum Android version?
 SoNotes requires Android 8.0 (API level 26) or higher.
 
----
-
 ## Bug Reports/Suggestions
 - Feel free to report bugs or suggestions by opening an [issue](https://github.com/GalaxyJammed/SoNotes/issues) or [discussion](https://github.com/GalaxyJammed/SoNotes/discussions) thread!
 
----
