@@ -2,12 +2,21 @@ package com.example.sonotes.data
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 
 enum class AppThemeMode(val displayName: String) {
     SYSTEM("System"),
     WHITE_CIRCLE("White Mode"),
     BLACK_CIRCLE("Dark Mode"),
     BURGUNDY_CIRCLE("Burgundy Mode")
+}
+
+enum class AppFontOption(val displayName: String, val fontFamily: FontFamily) {
+    DEFAULT("Default System", FontFamily.Default),
+    SERIF("Classic Serif", FontFamily.Serif),
+    CURSIVE("Aesthetic Cursive", FontFamily.Cursive),
+    MONOSPACE("Retro Monospace", FontFamily.Monospace),
+    SANS_SERIF("Modern Sans", FontFamily.SansSerif)
 }
 
 enum class SortOption(val displayName: String) {
@@ -30,6 +39,8 @@ object AppSettings {
     private const val KEY_DYSLEXIA_MODE = "dyslexia_mode"
     private const val KEY_STYLUS_COLOR = "stylus_color"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_APP_FONT = "app_font"
+    private const val KEY_NOTE_LINES_ENABLED = "note_lines_enabled"
     private const val KEY_STYLUS_WIDTH = "stylus_width"
     private const val KEY_SORT_OPTION = "sort_option"
     private const val KEY_FINGERPRINT_ENABLED = "fingerprint_enabled"
@@ -169,6 +180,27 @@ object AppSettings {
     fun setAutoExportDays(context: Context, days: Int) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putInt(KEY_AUTO_EXPORT_DAYS, days).apply()
+    }
+
+    fun getAppFont(context: Context): AppFontOption {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val name = prefs.getString(KEY_APP_FONT, AppFontOption.DEFAULT.name) ?: AppFontOption.DEFAULT.name
+        return try { AppFontOption.valueOf(name) } catch (_: Exception) { AppFontOption.DEFAULT }
+    }
+
+    fun setAppFont(context: Context, font: AppFontOption) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_APP_FONT, font.name).apply()
+    }
+
+    fun isNoteLinesEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_NOTE_LINES_ENABLED, false)
+    }
+
+    fun setNoteLinesEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_NOTE_LINES_ENABLED, enabled).apply()
     }
 }
 

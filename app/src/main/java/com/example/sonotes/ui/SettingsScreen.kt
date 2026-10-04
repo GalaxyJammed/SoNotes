@@ -28,12 +28,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
@@ -78,6 +80,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.sonotes.data.AppFontOption
 import com.example.sonotes.data.AppSettings
 import com.example.sonotes.data.AppThemeMode
 import com.example.sonotes.data.UnlockMethod
@@ -87,11 +90,14 @@ import java.util.Locale
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onThemeChanged: (AppThemeMode) -> Unit
+    onThemeChanged: (AppThemeMode) -> Unit,
+    onFontChanged: (AppFontOption) -> Unit = {}
 ) {
     val context = LocalContext.current
 
     var selectedThemeMode by remember { mutableStateOf(AppSettings.getThemeMode(context)) }
+    var selectedFontOption by remember { mutableStateOf(AppSettings.getAppFont(context)) }
+    var isNoteLinesEnabled by remember { mutableStateOf(AppSettings.isNoteLinesEnabled(context)) }
     var isDyslexiaEnabled by remember { mutableStateOf(AppSettings.isDyslexiaModeEnabled(context)) }
     var selectedInkColorArgb by remember { mutableIntStateOf(AppSettings.getStylusColor(context)) }
     var selectedStylusWidth by remember { mutableStateOf(AppSettings.getStylusWidth(context)) }
@@ -405,6 +411,148 @@ fun SettingsScreen(
                             cap = StrokeCap.Round
                         )
                     }
+                }
+            }
+
+            OptionCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.FormatSize,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Font",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Change the entire font of the app to an aesthetic style",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+
+                var fontDropdownExpanded by remember { mutableStateOf(false) }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .clickable { fontDropdownExpanded = true }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = selectedFontOption.displayName,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = selectedFontOption.fontFamily),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Expand font options"
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = fontDropdownExpanded,
+                        onDismissRequest = { fontDropdownExpanded = false }
+                    ) {
+                        AppFontOption.entries.forEach { option ->
+                            val isSelected = selectedFontOption == option
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = option.displayName,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = option.fontFamily),
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        if (isSelected) {
+                                            Spacer(Modifier.width(24.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    selectedFontOption = option
+                                    AppSettings.setAppFont(context, option)
+                                    onFontChanged(option)
+                                    fontDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            OptionCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "View Notes with lines",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "Display textbook ruled lines behind notes like a normal notebook",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Switch(
+                        checked = isNoteLinesEnabled,
+                        onCheckedChange = { checked ->
+                            isNoteLinesEnabled = checked
+                            AppSettings.setNoteLinesEnabled(context, checked)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
             }
 
@@ -788,7 +936,7 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "SoNotes Note-Taking App\nVersion 1.3.0",
+                    text = "SoNotes Note-Taking App\nVersion 1.4.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

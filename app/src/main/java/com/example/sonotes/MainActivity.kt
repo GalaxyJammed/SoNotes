@@ -64,6 +64,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.sonotes.data.AppDatabase
+import com.example.sonotes.data.AppFontOption
 import com.example.sonotes.data.AppSettings
 import com.example.sonotes.data.AppThemeMode
 import com.example.sonotes.data.Folder
@@ -87,6 +88,7 @@ class MainActivity : FragmentActivity() {
         setContent {
             val context = LocalContext.current
             var themeMode by remember { mutableStateOf(AppSettings.getThemeMode(context)) }
+            var fontOption by remember { mutableStateOf(AppSettings.getAppFont(context)) }
 
             val lifecycleOwner = LocalLifecycleOwner.current
             val initialFingerprint = AppSettings.isFingerprintEnabled(context)
@@ -114,7 +116,7 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            SoNotesTheme(themeMode = themeMode) {
+            SoNotesTheme(themeMode = themeMode, fontOption = fontOption) {
                 val fingerprintNow = AppSettings.isFingerprintEnabled(context)
                 val pinNow = AppSettings.isPinEnabled(context)
                 val pinCodeNow = AppSettings.getPinCode(context)
@@ -127,7 +129,10 @@ class MainActivity : FragmentActivity() {
                         onUnlockSuccess = { isLocked = false }
                     )
                 } else {
-                    AppNav(onThemeChanged = { newMode -> themeMode = newMode })
+                    AppNav(
+                        onThemeChanged = { newMode -> themeMode = newMode },
+                        onFontChanged = { newFont -> fontOption = newFont }
+                    )
                 }
             }
         }
@@ -136,7 +141,10 @@ class MainActivity : FragmentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
+fun AppNav(
+    onThemeChanged: (AppThemeMode) -> Unit,
+    onFontChanged: (AppFontOption) -> Unit
+) {
     val nav = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -464,7 +472,8 @@ fun AppNav(onThemeChanged: (AppThemeMode) -> Unit) {
             composable("settings") {
                 SettingsScreen(
                     onBack = { nav.popBackStack() },
-                    onThemeChanged = onThemeChanged
+                    onThemeChanged = onThemeChanged,
+                    onFontChanged = onFontChanged
                 )
             }
             composable("trash") {

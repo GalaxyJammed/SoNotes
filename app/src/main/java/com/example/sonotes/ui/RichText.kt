@@ -31,7 +31,8 @@ data class CharStyle(
     val bold: Boolean = false,
     val italic: Boolean = false,
     val strikethrough: Boolean = false,
-    val color: Int = 0
+    val color: Int = 0,
+    val underlineColor: Int = 0
 )
 
 data class RichContent(
@@ -263,6 +264,7 @@ fun RichContent.toJson(): String {
                     .put(if (s.italic) 1 else 0)
                     .put(s.color)
                     .put(if (s.strikethrough) 1 else 0)
+                    .put(s.underlineColor)
             )
         }
         i = j
@@ -281,7 +283,14 @@ fun richContentFromBody(body: String): RichContent {
         for (k in 0 until runs.length()) {
             val r = runs.getJSONArray(k)
             val strikethrough = if (r.length() > 5) r.getInt(5) == 1 else false
-            val style = CharStyle(r.getInt(2) == 1, r.getInt(3) == 1, strikethrough, r.getInt(4))
+            val underlineColor = if (r.length() > 6) r.getInt(6) else 0
+            val style = CharStyle(
+                bold = r.getInt(2) == 1,
+                italic = r.getInt(3) == 1,
+                strikethrough = strikethrough,
+                color = r.getInt(4),
+                underlineColor = underlineColor
+            )
             for (x in r.getInt(0) until minOf(r.getInt(1), text.length)) styles[x] = style
         }
         RichContent(text, styles)
@@ -424,6 +433,17 @@ fun EditorState.shownColor(): Int {
         typing.color
     } else {
         sStyles[sel.min.coerceIn(0, sStyles.lastIndex)].color
+    }
+}
+
+fun EditorState.shownUnderlineColor(): Int {
+    val sel = value.selection
+    val sStyles = content.safeStyles()
+    if (sStyles.isEmpty()) return typing.underlineColor
+    return if (sel.collapsed) {
+        typing.underlineColor
+    } else {
+        sStyles[sel.min.coerceIn(0, sStyles.lastIndex)].underlineColor
     }
 }
 

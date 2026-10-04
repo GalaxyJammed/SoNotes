@@ -52,12 +52,19 @@ import androidx.compose.material.icons.filled.FormatColorText
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.text.style.TextDecoration
+import com.example.sonotes.data.AppSettings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -85,6 +92,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
@@ -445,6 +453,102 @@ fun InlineImageView(
     }
 }
 
+private fun DrawScope.drawUnderlinesForStyles(
+    layout: TextLayoutResult,
+    styles: List<CharStyle>
+) {
+    val safeStyles = if (styles.size == layout.layoutInput.text.length) styles else return
+    var startIdx = -1
+    var currentColor = 0
+
+    for (idx in 0..safeStyles.size) {
+        val style = safeStyles.getOrNull(idx)
+        val uColor = style?.underlineColor ?: 0
+
+        if (uColor != currentColor) {
+            if (currentColor != 0 && startIdx != -1 && startIdx < idx) {
+                val safeStart = startIdx.coerceIn(0, layout.layoutInput.text.length)
+                val safeEnd = idx.coerceIn(safeStart, layout.layoutInput.text.length)
+                if (safeStart < safeEnd) {
+                    val startLine = layout.getLineForOffset(safeStart)
+                    val endLine = layout.getLineForOffset((safeEnd - 1).coerceAtLeast(0))
+
+                    for (line in startLine..endLine) {
+                        val lineStartOffset = layout.getLineStart(line)
+                        val lineEndOffset = layout.getLineEnd(line)
+
+                        val segStart = maxOf(safeStart, lineStartOffset)
+                        val segEnd = minOf(safeEnd, lineEndOffset)
+
+                        if (segStart < segEnd) {
+                            val x1 = layout.getHorizontalPosition(segStart, true)
+                            val x2 = layout.getHorizontalPosition(segEnd, true)
+                            val y = layout.getLineBaseline(line) + 3.dp.toPx()
+
+                            drawLine(
+                                color = Color(currentColor),
+                                start = Offset(x1, y),
+                                end = Offset(x2, y),
+                                strokeWidth = 2.dp.toPx(),
+                                cap = StrokeCap.Round
+                            )
+                        }
+                    }
+                }
+            }
+            startIdx = idx
+            currentColor = uColor
+        }
+    }
+}
+
+private fun DrawScope.drawNotebookLines(
+    layout: TextLayoutResult?,
+    lineColor: Color,
+    marginColor: Color,
+    minHeightPx: Float,
+    isLastBlock: Boolean
+) {
+    val marginX = 24.dp.toPx()
+    val totalH = maxOf(size.height, minHeightPx)
+
+    drawLine(
+        color = marginColor,
+        start = Offset(marginX, 0f),
+        end = Offset(marginX, totalH),
+        strokeWidth = 1.5.dp.toPx()
+    )
+
+    val lineSpacingPx = 28.dp.toPx()
+    var lastY = 0f
+
+    if (layout != null && layout.lineCount > 0) {
+        for (i in 0 until layout.lineCount) {
+            val y = layout.getLineBaseline(i) + 4.dp.toPx()
+            drawLine(
+                color = lineColor,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1.dp.toPx()
+            )
+            lastY = y
+        }
+    }
+
+    if (isLastBlock) {
+        var nextY = if (lastY > 0f) lastY + lineSpacingPx else 36.dp.toPx()
+        while (nextY < totalH) {
+            drawLine(
+                color = lineColor,
+                start = Offset(0f, nextY),
+                end = Offset(size.width, nextY),
+                strokeWidth = 1.dp.toPx()
+            )
+            nextY += lineSpacingPx
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
@@ -469,7 +573,9 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
     
     var attachmentMenu by remember { mutableStateOf(false) }
     var colorMenu by remember { mutableStateOf(false) }
+    var underlineColorMenu by remember { mutableStateOf(false) }
     var headerMenu by remember { mutableStateOf(false) }
+    var isNoteLinesEnabled by remember { mutableStateOf(AppSettings.isNoteLinesEnabled(context)) }
 
     val undoStack = remember { ArrayList<EditorState>() }
     val redoStack = remember { ArrayList<EditorState>() }
@@ -648,6 +754,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
     }
 
     val shownColor = if (loaded) editor.shownColor() else 0
+    val shownUnderlineColor = if (loaded) editor.shownUnderlineColor() else 0
     val listKind = editor.currentList()
 
     Scaffold(
@@ -765,6 +872,9 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                         .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
                 ) {
                     val minHeight = (maxHeight - 24.dp).coerceAtLeast(0.dp)
+                    val lineOutlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    val marginLineColor = Color(0xFFE57373).copy(alpha = 0.35f)
+
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -773,7 +883,9 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             val docBlocks = remember(editor.content.text) { parseDocBlocks(editor.content.text) }
 
-                            docBlocks.forEach { block ->
+                            docBlocks.forEachIndexed { blockIndex, block ->
+                                val isLastBlock = (blockIndex == docBlocks.lastIndex)
+
                                 when (block) {
                                     is DocBlock.TextBlock -> {
                                         val segmentText = block.text
@@ -796,6 +908,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                             val segSelStart = (fullSel.start - block.startIndex).coerceIn(0, segmentText.length)
                                             val segSelEnd = (fullSel.end - block.startIndex).coerceIn(0, segmentText.length)
                                             val segFieldValue = TextFieldValue(segmentText, TextRange(segSelStart, segSelEnd))
+                                            var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
 
                                             BasicTextField(
                                                 value = segFieldValue,
@@ -820,7 +933,8 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                     }
                                                     commit(next, big)
                                                 },
-                                                textStyle = TextStyle(
+                                                onTextLayout = { textLayoutResult = it },
+                                                textStyle = MaterialTheme.typography.bodyLarge.copy(
                                                     color = MaterialTheme.colorScheme.onSurface,
                                                     fontSize = 16.sp,
                                                     lineHeight = 24.sp
@@ -830,7 +944,22 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .heightIn(min = if (docBlocks.size == 1) minHeight else 32.dp)
-                                                    .padding(12.dp),
+                                                    .padding(12.dp)
+                                                    .drawWithContent {
+                                                        if (isNoteLinesEnabled) {
+                                                            drawNotebookLines(
+                                                                layout = textLayoutResult,
+                                                                lineColor = lineOutlineColor,
+                                                                marginColor = marginLineColor,
+                                                                minHeightPx = minHeight.toPx(),
+                                                                isLastBlock = isLastBlock
+                                                            )
+                                                        }
+                                                        drawContent()
+                                                        textLayoutResult?.let { layout ->
+                                                            drawUnderlinesForStyles(layout, segContent.styles)
+                                                        }
+                                                    },
                                                 decorationBox = { inner ->
                                                     Box(modifier = Modifier.fillMaxWidth()) {
                                                         if (editor.value.text.isEmpty()) {
@@ -858,25 +987,40 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                 } else if (block.text.isNotEmpty()) {
                                                     val images = remember(block.text) { parseMarkdownImages(block.text) }
                                                     if (images.isEmpty()) {
-                                                        var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+                                                        var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
                                                         val cleanAnnotated = remember(segContent, block.startIndex) {
                                                             segContent.toCleanAnnotated(block.startIndex)
                                                         }
 
                                                         Text(
                                                             text = cleanAnnotated,
-                                                            style = TextStyle(
+                                                            style = MaterialTheme.typography.bodyLarge.copy(
                                                                 color = MaterialTheme.colorScheme.onSurface,
                                                                 fontSize = 16.sp,
                                                                 lineHeight = 24.sp
                                                             ),
-                                                            onTextLayout = { layoutResult = it },
+                                                            onTextLayout = { textLayoutResult = it },
                                                             modifier = Modifier
                                                                 .fillMaxWidth()
+                                                                .drawWithContent {
+                                                                    if (isNoteLinesEnabled) {
+                                                                        drawNotebookLines(
+                                                                            layout = textLayoutResult,
+                                                                            lineColor = lineOutlineColor,
+                                                                            marginColor = marginLineColor,
+                                                                            minHeightPx = minHeight.toPx(),
+                                                                            isLastBlock = isLastBlock
+                                                                        )
+                                                                    }
+                                                                    drawContent()
+                                                                    textLayoutResult?.let { layout ->
+                                                                        drawUnderlinesForStyles(layout, segContent.styles)
+                                                                    }
+                                                                }
                                                                 .pointerInput(cleanAnnotated) {
                                                                     detectTapGestures { tapOffset ->
-                                                                        layoutResult?.let { textLayoutResult ->
-                                                                            val pos = textLayoutResult.getOffsetForPosition(tapOffset)
+                                                                        textLayoutResult?.let { layoutRes ->
+                                                                            val pos = layoutRes.getOffsetForPosition(tapOffset)
                                                                             cleanAnnotated
                                                                                 .getStringAnnotations(tag = "TODO_TOGGLE", start = pos, end = pos)
                                                                                 .firstOrNull()?.let { annotation ->
@@ -902,7 +1046,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                                     val subAnnotated = segContent.toCleanAnnotated(block.startIndex + lastIdx)
                                                                     Text(
                                                                         text = subAnnotated,
-                                                                        style = TextStyle(
+                                                                        style = MaterialTheme.typography.bodyLarge.copy(
                                                                             color = MaterialTheme.colorScheme.onSurface,
                                                                             fontSize = 16.sp,
                                                                             lineHeight = 24.sp
@@ -925,7 +1069,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                                 val subAnnotated = segContent.toCleanAnnotated(block.startIndex + lastIdx)
                                                                 Text(
                                                                     text = subAnnotated,
-                                                                    style = TextStyle(
+                                                                    style = MaterialTheme.typography.bodyLarge.copy(
                                                                         color = MaterialTheme.colorScheme.onSurface,
                                                                         fontSize = 16.sp,
                                                                         lineHeight = 24.sp
@@ -994,7 +1138,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                                     },
                                                                     readOnly = !isEditMode,
                                                                     modifier = Modifier.width(100.dp),
-                                                                    textStyle = TextStyle(
+                                                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
                                                                         fontSize = 13.sp,
                                                                         fontWeight = FontWeight.Bold,
                                                                         color = MaterialTheme.colorScheme.onSurface
@@ -1033,7 +1177,7 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                                                         },
                                                                         readOnly = !isEditMode,
                                                                         modifier = Modifier.width(100.dp),
-                                                                        textStyle = TextStyle(
+                                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
                                                                             fontSize = 13.sp,
                                                                             color = MaterialTheme.colorScheme.onSurface
                                                                         ),
@@ -1324,6 +1468,41 @@ fun EditorScreen(noteId: Long, folderId: Long?, onBack: () -> Unit) {
                                         onClick = {
                                             commit(editor.applyStyle { it.copy(color = c) }, true)
                                             colorMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Box {
+                            IconButton(onClick = { underlineColorMenu = true }) {
+                                Icon(
+                                    Icons.Default.FormatUnderlined,
+                                    contentDescription = "Underline color",
+                                    tint = if (shownUnderlineColor != 0) Color(shownUnderlineColor) else LocalContentColor.current
+                                )
+                            }
+                            DropdownMenu(expanded = underlineColorMenu, onDismissRequest = { underlineColorMenu = false }) {
+                                palette.forEach { c ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            if (c == 0) {
+                                                Text("Default / None")
+                                            } else {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(Modifier.size(20.dp).background(Color(c), CircleShape))
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(
+                                                        "Underline",
+                                                        textDecoration = TextDecoration.Underline,
+                                                        color = Color(c)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = {
+                                            commit(editor.applyStyle { it.copy(underlineColor = c) }, true)
+                                            underlineColorMenu = false
                                         }
                                     )
                                 }

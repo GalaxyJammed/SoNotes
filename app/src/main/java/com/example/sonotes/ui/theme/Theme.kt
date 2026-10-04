@@ -6,6 +6,9 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Typography
+import androidx.compose.runtime.remember
+import com.example.sonotes.data.AppFontOption
 import com.example.sonotes.data.AppThemeMode
 
 private val LightColorScheme = lightColorScheme(
@@ -83,6 +86,7 @@ private val BurgundyColorScheme = darkColorScheme(
 @Composable
 fun SoNotesTheme(
     themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    fontOption: AppFontOption = AppFontOption.DEFAULT,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -98,9 +102,30 @@ fun SoNotesTheme(
         else -> LightColorScheme
     }
 
+    val font = fontOption.fontFamily
+    val customTypography = remember(font) {
+        Typography(
+            displayLarge = Typography.displayLarge.copy(fontFamily = font),
+            displayMedium = Typography.displayMedium.copy(fontFamily = font),
+            displaySmall = Typography.displaySmall.copy(fontFamily = font),
+            headlineLarge = Typography.headlineLarge.copy(fontFamily = font),
+            headlineMedium = Typography.headlineMedium.copy(fontFamily = font),
+            headlineSmall = Typography.headlineSmall.copy(fontFamily = font),
+            titleLarge = Typography.titleLarge.copy(fontFamily = font),
+            titleMedium = Typography.titleMedium.copy(fontFamily = font),
+            titleSmall = Typography.titleSmall.copy(fontFamily = font),
+            bodyLarge = Typography.bodyLarge.copy(fontFamily = font),
+            bodyMedium = Typography.bodyMedium.copy(fontFamily = font),
+            bodySmall = Typography.bodySmall.copy(fontFamily = font),
+            labelLarge = Typography.labelLarge.copy(fontFamily = font),
+            labelMedium = Typography.labelMedium.copy(fontFamily = font),
+            labelSmall = Typography.labelSmall.copy(fontFamily = font)
+        )
+    }
+
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = customTypography,
         content = content
     )
 }
