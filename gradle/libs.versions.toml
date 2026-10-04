@@ -10,7 +10,7 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 ksp = "2.3.10"
 room = "2.8.4"
-navigationCompose = "2.9.6"
+navigationCompose = "2.10.2"
 mlkitInk = "19.0.0"
 mlkitText = "16.0.1"
 
