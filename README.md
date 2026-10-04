@@ -25,8 +25,6 @@ SoNotes is a free, open-source, privacy-first note-taking app for Android. Handw
   <em>"Your notes, however you like"</em>
 </div>
 
----
-
 ## Note Taking Features
 
 ### ✒️ Smart Stylus Support
@@ -38,29 +36,34 @@ SoNotes is a free, open-source, privacy-first note-taking app for Android. Handw
 - Adjust fonts, sizes, and colors to make every note look the way you want
 
 ### ⚙️ Settings and Themes
-- Fine-tune **how the stylus works** to match your writing style
-- Choose from a range of **app themes**, including light and dark mode
+- Fine-tune **how the stylus works** to match your writing style (color and width)
+- Choose from a range of **app themes**, including light, dark and burgundy
 
 ### 📁 Infinite Folders, Subfolders and Notes
 - Create **unlimited folders, subfolders, and notes**
 - Nest as deeply as you need to keep everything organized your way
+- Searching and Filtering to go through your folders and notes faster
+- Tags to organize your folders however you like (Work, Gaming, School etc)
+- Trash that keeps deleted folders/notes for up-to 30 days
 
 ### 🖼️ Image Support
 - Add images to your notes alongside your handwriting and text
+- Image customization with Resize and Rotate
 
 ### 💾 Automatic Saving
 - Every change is **saved automatically**, so you never lose a thought
 - No save button, no lost work
+- Export/Import and automatic Backups every 'X' days straight to your device
 
 ### 🔒 Everything Local, Complete Privacy
 - All notes, folders, and images are stored **locally on your device**
 - Nothing is uploaded to any server
 - SoNotes never asks for usage data. Everything you write is available only to you
+- Fingerprint and PIN lock screen support
 
 ### 🚀 More to Come
-SoNotes is a work in progress and new features are on the way.
+- SoNotes is a work in progress and new features are on the way.
 
----
 
 ## 🛠️ Setup
 
@@ -69,8 +72,6 @@ SoNotes is a work in progress and new features are on the way.
 3. Create a folder or a note and start writing
 
 Simple and easy!
-
----
 
 ## ❓ Frequently Asked Questions
 
@@ -95,9 +96,6 @@ There is no limit. You can create infinite folders, subfolders, and notes.
 ### What is the minimum Android version?
 SoNotes requires Android 8.0 (API level 26) or higher.
 
----
-
 ## Bug Reports/Suggestions
 - Feel free to report bugs or suggestions by opening an [issue](https://github.com/GalaxyJammed/SoNotes/issues) or [discussion](https://github.com/GalaxyJammed/SoNotes/discussions) thread!
 
----
